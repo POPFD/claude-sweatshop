@@ -25,8 +25,13 @@ For every step you receive, follow this exact sequence:
 4. **Test** — run /test to verify all tests pass (not just
    the new ones).
 5. **Lint** — run /lint to verify code quality.
-6. **Commit** — run /commit-changes to create an atomic commit
-   for this step.
+6. **Mark step complete** — update the plan file (path
+   provided by the orchestrator) by changing the acceptance
+   criteria checkboxes from `- [ ]` to `- [x]` for this
+   step only.
+7. **Commit** — run /commit-changes to create an atomic commit
+   for this step. The commit will include both the code
+   changes and the updated plan file.
 
 ## Rules
 
@@ -38,6 +43,13 @@ before tests exist for it.
 
 CRITICAL: If build, test, or lint fails, fix the issue and
 re-run the validation. Do not commit broken code.
+
+CRITICAL: Always mark the step's acceptance criteria as
+complete in the plan file before committing. This ensures
+the plan progress is tracked in the commit history.
+
+CRITICAL: Only mark criteria as complete for the current step.
+Do not modify any other steps in the plan file.
 
 CRITICAL: The commit must be atomic and reviewable in
 isolation. A human reading the diff should understand what

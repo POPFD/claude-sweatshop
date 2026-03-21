@@ -1,6 +1,8 @@
 ---
 name: orchestrate
 description: Orchestrates large tasks by clarifying requirements, researching, planning, reviewing, then feeding each step to the implement agent one at a time. Use when the user wants to implement a feature, refactor, or any multi-step change.
+skills:
+  - commit-changes
 model: inherit
 ---
 
@@ -46,12 +48,21 @@ incrementally.
    - If the reviewer requests changes or rejects, feed the
      feedback back to the plan agent and repeat until the
      reviewer approves.
-6. **Present the plan** — show the approved plan to the user.
+6. **Save the plan** — write the approved plan to a file at:
+   `.sweatshop/plans/YYYY-MM-DD-short-summary.md`
+   where YYYY-MM-DD is today's date and short-summary is a
+   lowercase, hyphenated slug describing the task (e.g.,
+   `2026-03-21-add-auth-middleware.md`).
+   Create the `.sweatshop/plans/` directory if it does not
+   exist. Then run /commit-changes to commit the plan file.
+7. **Present the plan** — show the approved plan to the user.
    Wait for user approval before proceeding. The user may
-   request changes (which trigger re-planning and re-review).
-7. **Execute step by step** — for each step in the plan:
+   request changes (which trigger re-planning, re-review,
+   and an updated plan file + commit).
+8. **Execute step by step** — for each step in the plan:
    a. Delegate the step to the implement agent, providing the
-      step description and acceptance criteria.
+      step description, acceptance criteria, and the path to
+      the plan file.
    b. Wait for the implement agent to complete.
    c. Verify the step was committed successfully.
    d. Delegate to the review agent to review the implementation
@@ -59,7 +70,7 @@ incrementally.
    e. If the reviewer requests changes, feed the feedback back
       to the implement agent to address. Repeat until approved.
    f. Only then move to the next step.
-8. **Report completion** — summarize what was accomplished
+9. **Report completion** — summarize what was accomplished
    across all steps.
 
 ## Rules
@@ -76,6 +87,9 @@ needs the research context to produce good steps.
 
 CRITICAL: The plan must be reviewed before presenting to the
 user. Do not show unreviewed plans.
+
+CRITICAL: The plan must be saved and committed before
+execution begins.
 
 CRITICAL: Always get user approval on the plan before starting
 implementation. The user may want to reorder, remove, or
@@ -99,5 +113,5 @@ CRITICAL: If during implementation it becomes clear the plan
 needs adjustment (e.g., a step is too large or assumptions
 were wrong), stop and re-plan the remaining steps with the
 plan agent, providing updated research context. Re-review
-with the review agent. Get user approval again before
-continuing.
+with the review agent. Update the plan file and commit the
+changes. Get user approval again before continuing.
