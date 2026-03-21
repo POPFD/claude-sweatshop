@@ -13,8 +13,10 @@ area: An example commit tagline
 Then a multiline paragraph explaining first why we're changing
 things, what has been changed and further technical information.
 
-CRITICAL: No line should be greater than 85 characters, if the
-tag line needs to be then use ... suffixed.
+CRITICAL: No line should be greater than 85 characters. Always
+fill lines up to 85 characters before wrapping to the next line
+— do not break early. If the tag line needs to exceed 85
+characters then use ... suffixed.
 
 CRITICAL: Use --signoff but DO NOT manually add ANY "Signed-off-by:" lines
 in the commit message. Let git --signoff handle it automatically. This will
