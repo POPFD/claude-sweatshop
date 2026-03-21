@@ -6,6 +6,27 @@ A Claude Code plugin that orchestrates multi-agent workflows for day-to-day deve
 
 When you invoke `@orchestrate` with a task, the plugin coordinates a pipeline of specialized agents:
 
+```mermaid
+flowchart TD
+    A["@orchestrate task"] --> B{"Clarify?\n(obvious gaps)"}
+    B -->|yes| C[Ask user]
+    C --> D["Research"]
+    B -->|no| D
+    D --> E{"Clarify?\n(new ambiguities)"}
+    E -->|yes| F[Ask user]
+    F --> G["Plan"]
+    E -->|no| G
+    G --> H["Review plan"]
+    H -->|approved| I["Save plan to\n.sweatshop/plans/"]
+    H -->|rework| G
+    I --> J["Implement step N\n(TDD: test → code → build/test/lint)"]
+    J --> K["Review step N"]
+    K -->|approved| L{More steps?}
+    K -->|rework| J
+    L -->|yes| J
+    L -->|no| M["Done"]
+```
+
 1. **Research** — scans the codebase and the web to gather context about the task
 2. **Plan** — produces a numbered list of small, incremental steps with acceptance criteria
 3. **Review** — a principal-engineer reviewer evaluates the plan for design quality, scalability, and performance
