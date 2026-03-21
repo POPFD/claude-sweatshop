@@ -2,10 +2,27 @@
 name: test
 description: "Use when the user asks to run tests. Auto-detects the test framework and runs the appropriate test command."
 argument-hint: [args]
-allowed-tools: Bash(make:*), Bash(cargo:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go test:*), Bash(dotnet test:*), Bash(gradle:*), Bash(mvn:*), Bash(pytest:*), Bash(python:*), Bash(cat:*), Bash(ls:*), Read, Glob
+allowed-tools: Bash(make:*), Bash(cargo:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go test:*), Bash(dotnet test:*), Bash(gradle:*), Bash(mvn:*), Bash(pytest:*), Bash(python:*), Bash(cat:*), Bash(ls:*), Bash(sha256sum:*), Bash(mkdir:*), Read, Write, Glob
 ---
 
 # Run the project's tests
+
+## Memory (toolchain cache)
+
+Before detecting, check if `.sweatshop/memory.json` exists and
+contains a `toolchain.test` entry. If it does:
+
+1. Read the stored `config_file` and `config_hash`.
+2. Hash the current config file: `sha256sum <config_file>`.
+3. If the hash matches, use the stored `command` directly —
+   skip all detection logic below.
+4. If the hash differs or the config file no longer exists,
+   the entry is stale — proceed with detection.
+
+If `.sweatshop/memory.json` does not exist or has no
+`toolchain.test` key, proceed with detection.
+
+## Detection
 
 Auto-detect the project's test framework by checking for the
 presence of build/config files in the project root, then run
@@ -21,6 +38,26 @@ Detection order (use the first match found):
 7. pom.xml -> mvn test
 8. pytest.ini / pyproject.toml / setup.cfg -> pytest
 9. requirements.txt with test files -> pytest
+
+## Write back to memory
+
+After successful detection, write the result to
+`.sweatshop/memory.json` under `toolchain.test`:
+
+```json
+{
+  "command": "<resolved command>",
+  "config_file": "<file that triggered detection>",
+  "config_hash": "sha256:<hash>",
+  "detected_at": "<ISO 8601 timestamp>"
+}
+```
+
+Create `.sweatshop/` if it does not exist. If the file already
+exists, merge — do not overwrite other keys. Set `version: 1`
+at the top level if creating the file.
+
+## Rules
 
 CRITICAL: If no test framework is detected, report this clearly
 and do NOT guess or run arbitrary commands.

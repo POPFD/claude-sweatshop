@@ -2,10 +2,27 @@
 name: lint
 description: "Use when the user asks to lint or check code style. Auto-detects the linter and runs the appropriate lint command."
 argument-hint: [args]
-allowed-tools: Bash(make:*), Bash(cargo:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go vet:*), Bash(golangci-lint:*), Bash(dotnet format:*), Bash(gradle:*), Bash(mvn:*), Bash(ruff:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(cat:*), Bash(ls:*), Read, Glob
+allowed-tools: Bash(make:*), Bash(cargo:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go vet:*), Bash(golangci-lint:*), Bash(dotnet format:*), Bash(gradle:*), Bash(mvn:*), Bash(ruff:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(cat:*), Bash(ls:*), Bash(sha256sum:*), Bash(mkdir:*), Read, Write, Glob
 ---
 
 # Lint the project
+
+## Memory (toolchain cache)
+
+Before detecting, check if `.sweatshop/memory.json` exists and
+contains a `toolchain.lint` entry. If it does:
+
+1. Read the stored `config_file` and `config_hash`.
+2. Hash the current config file: `sha256sum <config_file>`.
+3. If the hash matches, use the stored `command` directly —
+   skip all detection logic below.
+4. If the hash differs or the config file no longer exists,
+   the entry is stale — proceed with detection.
+
+If `.sweatshop/memory.json` does not exist or has no
+`toolchain.lint` key, proceed with detection.
+
+## Detection
 
 Auto-detect the project's linter by checking for the presence
 of lint configuration and build files in the project root,
@@ -22,6 +39,26 @@ Detection order (use the first match found):
 8. ruff.toml / pyproject.toml with ruff -> ruff check .
 9. .flake8 / setup.cfg with flake8 -> flake8 .
 10. .pylintrc -> pylint .
+
+## Write back to memory
+
+After successful detection, write the result to
+`.sweatshop/memory.json` under `toolchain.lint`:
+
+```json
+{
+  "command": "<resolved command>",
+  "config_file": "<file that triggered detection>",
+  "config_hash": "sha256:<hash>",
+  "detected_at": "<ISO 8601 timestamp>"
+}
+```
+
+Create `.sweatshop/` if it does not exist. If the file already
+exists, merge — do not overwrite other keys. Set `version: 1`
+at the top level if creating the file.
+
+## Rules
 
 CRITICAL: If no linter is detected, report this clearly and
 do NOT guess or run arbitrary commands.
