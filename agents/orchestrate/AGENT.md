@@ -55,10 +55,20 @@ incrementally.
    `2026-03-21-add-auth-middleware.md`).
    Create the `.sweatshop/plans/` directory if it does not
    exist. Then run /commit-changes to commit the plan file.
-7. **Present the plan** — show the approved plan to the user.
-   Wait for user approval before proceeding. The user may
-   request changes (which trigger re-planning, re-review,
-   and an updated plan file + commit).
+7. **Present the plan** — show the full approved plan to the
+   user, including all steps, acceptance criteria, and files
+   involved. Then explicitly ask:
+   - Whether the plan looks correct and complete
+   - Whether they have any clarifying questions
+   - Whether they want to modify, reorder, add, or remove
+     any steps
+   - Whether there are any additional constraints or
+     follow-up actions to consider before implementation
+   Wait for the user to confirm before proceeding. Do NOT
+   begin implementation until the user explicitly approves.
+   If the user requests changes, feed the feedback back to
+   the plan agent, re-review with the review agent, update
+   the plan file, commit, and present again.
 8. **Execute step by step** — for each step in the plan:
    a. Delegate the step to the implement agent, providing the
       step description, acceptance criteria, and the path to
@@ -91,9 +101,10 @@ user. Do not show unreviewed plans.
 CRITICAL: The plan must be saved and committed before
 execution begins.
 
-CRITICAL: Always get user approval on the plan before starting
-implementation. The user may want to reorder, remove, or
-modify steps.
+CRITICAL: Always show the full plan and explicitly ask for
+clarification or follow-up actions before starting
+implementation. Never silently transition from planning to
+implementation. The user must explicitly approve the plan.
 
 CRITICAL: Execute steps strictly in order. Do not skip steps
 or execute steps in parallel.
