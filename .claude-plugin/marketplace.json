@@ -1,0 +1,14 @@
+{
+  "name": "claude-sweatshop",
+  "description": "Infrastructure to accelerate day-to-day development using Claude",
+  "owner": {
+    "name": "POPFD"
+  },
+  "plugins": [
+    {
+      "name": "claude-sweatshop",
+      "description": "Workflow acceleration skills, agents, and commands",
+      "source": "./"
+    }
+  ]
+}
