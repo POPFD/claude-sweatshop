@@ -53,9 +53,9 @@ After successful detection, write the result to
 }
 ```
 
-Create `.sweatshop/` if it does not exist. If the file already
-exists, merge — do not overwrite other keys. Set `version: 1`
-at the top level if creating the file.
+Run the plugin's `scripts/init.sh` to ensure `.sweatshop/`
+exists (use Glob to locate it, then `bash <path>`). If the file
+already exists, merge — do not overwrite other keys.
 
 ## Rules
 

@@ -53,8 +53,9 @@ incrementally.
    where YYYY-MM-DD is today's date and short-summary is a
    lowercase, hyphenated slug describing the task (e.g.,
    `2026-03-21-add-auth-middleware.md`).
-   Create the `.sweatshop/plans/` directory if it does not
-   exist. Then run /commit-changes to commit the plan file.
+   Run the plugin's `scripts/init.sh` to ensure `.sweatshop/`
+   exists (use Glob to locate it, then `bash <path>`).
+   Then run /commit-changes to commit the plan file.
 7. **Present the plan** — show the full approved plan to the
    user, including all steps, acceptance criteria, and files
    involved. Then explicitly ask:
