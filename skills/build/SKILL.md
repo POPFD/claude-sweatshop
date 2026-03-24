@@ -1,6 +1,7 @@
 ---
 name: build
 description: Use when the user asks to build or compile the project. Auto-detects the build system and runs the appropriate build command.
+allowed-tools: Bash(make:*), Bash(cargo:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go build:*), Bash(dotnet build:*), Bash(gradle:*), Bash(mvn:*), Bash(cmake:*), Bash(meson:*), Bash(cat:*), Bash(ls:*), Bash(sha256sum:*), Bash(mkdir:*), Read, Write, Glob
 ---
 
 # Build the project

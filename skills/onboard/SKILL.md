@@ -1,6 +1,7 @@
 ---
 name: onboard
 description: Use when setting up claude-sweatshop in a project for the first time. Creates the .sweatshop/ directory, detects all toolchains, and populates memory.
+allowed-tools: Bash(bash:*), Bash(sha256sum:*), Bash(git add:*), Bash(git status:*), Read, Write, Glob
 ---
 
 # Onboard this project

@@ -1,6 +1,7 @@
 ---
 name: test
 description: Use when the user asks to run tests. Auto-detects the test framework and runs the appropriate test command.
+allowed-tools: Bash(make:*), Bash(cargo:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go test:*), Bash(dotnet test:*), Bash(gradle:*), Bash(mvn:*), Bash(pytest:*), Bash(python:*), Bash(cat:*), Bash(ls:*), Bash(sha256sum:*), Bash(mkdir:*), Read, Write, Glob
 ---
 
 # Run the project's tests

@@ -1,6 +1,7 @@
 ---
 name: lint
 description: Use when the user asks to lint or check code style. Auto-detects the linter and runs the appropriate lint command.
+allowed-tools: Bash(make:*), Bash(cargo:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go vet:*), Bash(golangci-lint:*), Bash(dotnet format:*), Bash(gradle:*), Bash(mvn:*), Bash(ruff:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(cat:*), Bash(ls:*), Bash(sha256sum:*), Bash(mkdir:*), Read, Write, Glob
 ---
 
 # Lint the project
