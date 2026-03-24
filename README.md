@@ -75,18 +75,29 @@ The plugin coordinates a pipeline of specialized agents and
 skills. The full workflow looks like this:
 
 ```mermaid
-flowchart LR
-    A["@orchestrate"] --> B["Research"] --> C["Plan"]
-    C --> D["Review"]
+flowchart TD
+    A["Requirements\nAnalysis"] --> B["Research"]
+    B --> C["Write Plan"]
+    C --> D{"Dual Review"}
     D -->|rework| C
-    D -->|approved| E["Implement\n(TDD)"]
-    E --> F["Review"]
-    F -->|rework| E
-    F -->|next step| E
-    F -->|done| G["Done"]
+    D -->|approved| E["User Approval"]
+    E --> F["Commit Plan"]
+
+    F --> G["Write Tests"]
+    G --> H["Implement"]
+    H --> I["Build / Test / Lint"]
+    I -->|fail| H
+    I -->|pass| J{"Dual Review"}
+    J -->|rework| H
+    J -->|approved| K["Commit Step"]
+    K -->|next step| G
+    K -->|all done| L["Verification"]
 
     style A fill:#4a5568,color:#fff
-    style G fill:#2f855a,color:#fff
+    style L fill:#2f855a,color:#fff
+    style D fill:#6b46c1,color:#fff
+    style J fill:#6b46c1,color:#fff
+    style E fill:#d69e2e,color:#fff
 ```
 
 ### 1. Requirements analysis
