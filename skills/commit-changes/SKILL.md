@@ -1,8 +1,6 @@
 ---
 name: commit-changes
-description: "Use when the user asks to commit, save changes, or create a git commit. Handles staging, message formatting, and signoff."
-argument-hint: [message]
-allowed-tools: Bash(git add:*), Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(git commit:*)
+description: Use when the user asks to commit, save changes, or create a git commit. Handles staging, message formatting, and signoff.
 ---
 
 # Commit changes to the repository
