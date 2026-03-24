@@ -58,7 +58,36 @@ Detection order:
 9. .flake8 / setup.cfg with flake8 -> flake8 .
 10. .pylintrc -> pylint .
 
-## Step 3 — Write memory
+## Step 3 — Detect project domain
+
+Analyze the codebase to auto-detect the project's domain for
+the domain-expert agent. Check: languages, frameworks, config
+files, README, directory structure, and dependencies.
+
+Detection examples:
+- Solidity / Hardhat / Foundry → **crypto/DeFi**: smart
+  contract security, gas optimization, reentrancy prevention
+- C/C++ with perf configs, lock-free structures →
+  **high-performance systems**: latency, memory management,
+  concurrency
+- React / Vue / Angular with CSS → **frontend/UX**:
+  accessibility, responsive design, performance
+- PyTorch / TensorFlow, dataset directories → **ML/data**:
+  model accuracy, data pipeline reliability, reproducibility
+- Go / gRPC / Kubernetes configs → **distributed systems**:
+  fault tolerance, consistency, observability
+
+Present the detected domain to the user:
+
+> "I detected this project as **[domain type]** with focus
+> areas: [list]. Does this look right, or would you like to
+> adjust?"
+
+If the user provides refinement, update accordingly. If no
+domain is detected, ask the user to describe their project's
+domain and focus areas.
+
+## Step 4 — Write memory
 
 For each detected toolchain, hash its config file with
 `sha256sum` and write the result into `.sweatshop/memory.json`.
@@ -76,18 +105,29 @@ Merge all entries in a single write. The file structure is:
     },
     "test": { "..." },
     "lint": { "..." }
+  },
+  "domain": {
+    "type": "<detected or user-specified domain>",
+    "focus_areas": ["area1", "area2", "area3"],
+    "review_criteria": ["criterion1", "criterion2", "criterion3"],
+    "detected_at": "<ISO 8601 timestamp>",
+    "user_refined": false
   }
 }
 ```
 
-Omit any toolchain key that was not detected.
+Omit any toolchain key that was not detected. Set
+`user_refined` to `true` if the user adjusted the domain
+detection.
 
-## Step 4 — Report
+## Step 5 — Report
 
 Show the user a summary of what was set up:
 
 - `.sweatshop/` directory and `.gitignore`
 - For each toolchain: the detected command and config file,
   or "not detected" if nothing matched
+- Domain expert configuration: type, focus areas, and
+  review criteria
 - Stage the new files with `git add -N .sweatshop/`
 - Suggest `/commit-changes` to commit the scaffolding
