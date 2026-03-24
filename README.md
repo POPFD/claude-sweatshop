@@ -35,30 +35,29 @@ test, lint), and configure the domain expert:
 
 ## Usage
 
-### Full orchestrated workflow
+### Starting new work
 
-Hand off an entire feature — research, plan, review, and
-implement — in one command:
+Kick off a feature or significant change with requirements
+analysis, which drives the full pipeline:
 
 ```
-@orchestrate Add pagination to the /users API endpoint
-@orchestrate Refactor the database layer to use connection pooling
-@orchestrate Fix the race condition in the webhook handler
+/requirements-analysis Add pagination to the /users API endpoint
+/requirements-analysis Fix the race condition in the webhook handler
 ```
 
-### Individual agents
+### Individual workflow steps
 
-Use agents directly when you only need a specific part of
+Use skills directly when you only need a specific part of
 the pipeline:
 
 ```
-@research How does the auth middleware work?
-@plan Refactor the database layer to use connection pooling
-@review Check the last commit for issues
-@implement Step 3 from the current plan
+/research How does the auth middleware work?
+/writing-plans Refactor the database layer to use connection pooling
+/requesting-review Check the last commit for issues
+/executing-plans Execute the current approved plan
 ```
 
-### Skills
+### Toolchain skills
 
 Run common dev tasks with auto-detection of your toolchain:
 
