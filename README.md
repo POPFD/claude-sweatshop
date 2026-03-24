@@ -1,6 +1,12 @@
 # claude-sweatshop
 
-A Claude Code plugin that orchestrates multi-agent workflows for day-to-day development. It breaks large tasks into researched, planned, reviewed, and incrementally implemented steps — each committed atomically with test-driven development.
+A Claude Code plugin that orchestrates multi-agent workflows
+for day-to-day development. It breaks large tasks into
+researched, planned, reviewed, and incrementally implemented
+steps — each committed atomically with test-driven
+development.
+
+Inspired by [superpowers](https://github.com/obra/superpowers).
 
 ## Installation
 
@@ -17,11 +23,22 @@ git clone git@github.com:POPFD/claude-sweatshop.git
 claude plugin install --source ./claude-sweatshop
 ```
 
-## Examples
+## Getting started
+
+Run the onboard skill in your project to set up the
+`.sweatshop/` directory, auto-detect your toolchains (build,
+test, lint), and configure the domain expert:
+
+```
+/onboard
+```
+
+## Usage
 
 ### Full orchestrated workflow
 
-Hand off an entire feature — research, plan, review, and implement — in one command:
+Hand off an entire feature — research, plan, review, and
+implement — in one command:
 
 ```
 @orchestrate Add pagination to the /users API endpoint
@@ -31,7 +48,8 @@ Hand off an entire feature — research, plan, review, and implement — in one 
 
 ### Individual agents
 
-Use agents directly when you only need a specific part of the pipeline:
+Use agents directly when you only need a specific part of
+the pipeline:
 
 ```
 @research How does the auth middleware work?
@@ -53,7 +71,8 @@ Run common dev tasks with auto-detection of your toolchain:
 
 ## How it works
 
-When you invoke `@orchestrate` with a task, the plugin coordinates a pipeline of specialized agents:
+The plugin coordinates a pipeline of specialized agents and
+skills. The full workflow looks like this:
 
 ```mermaid
 flowchart LR
@@ -70,33 +89,118 @@ flowchart LR
     style G fill:#2f855a,color:#fff
 ```
 
-1. **Research** — scans the codebase and the web to gather context about the task
-2. **Plan** — produces a numbered list of small, incremental steps with acceptance criteria
-3. **Review** — a principal-engineer reviewer evaluates the plan for design quality, scalability, and performance
-4. **Implement** — executes each step using TDD (tests first, then implementation), running build/test/lint before committing
-5. **Review (per step)** — each implementation step is reviewed before moving to the next
+### 1. Requirements analysis
 
-The orchestrator handles clarification with the user at two points: before research (to fill obvious gaps) and after research (when findings surface new ambiguities). Plans are saved to `.sweatshop/plans/` and committed before execution begins.
+New features start with a structured dialogue. The plugin
+surveys the project, evaluates the task against constraints
+(performance, scalability, security, compatibility), and asks
+focused questions one at a time to fill gaps. It then
+compares viable approaches with trade-offs and walks through
+the design piece by piece. No code is written until the user
+explicitly approves the design.
+
+### 2. Research
+
+The researcher agent investigates both the codebase and
+external sources. It searches for relevant code, patterns,
+architecture, dependencies, prior art, documentation, best
+practices, and known pitfalls. The output is a structured
+report covering task understanding, codebase findings,
+external findings, and recommendations.
+
+### 3. Planning
+
+Work is broken into small, incremental, decoupled steps —
+each producing an atomic, reviewable commit. Every step
+includes a description, rationale, acceptance criteria
+(as checkboxes), and a list of files likely involved. Plans
+are saved to `.sweatshop/plans/` and committed before
+execution begins.
+
+### 4. Review (plans and code)
+
+Every plan and every implementation step goes through a dual
+review gate. Two agents run in parallel:
+
+- **Code reviewer** — a principal engineer evaluating design
+  quality, scalability, performance, technology choices, and
+  alignment with research findings.
+- **Domain expert** — auto-configured during onboarding
+  based on the project's domain (e.g., crypto/DeFi, frontend,
+  ML, distributed systems). Catches domain-specific pitfalls
+  that a general code review would miss.
+
+If either reviewer requests changes, feedback is applied and
+re-reviewed (up to 3 iterations before escalating to the
+user).
+
+### 5. Execution (TDD per step)
+
+Each plan step follows a strict sequence:
+
+1. **Write tests first** — tests that verify the step's
+   acceptance criteria (they should fail initially)
+2. **Implement** — minimum code to make the tests pass
+3. **Build / Test / Lint** — all three must pass; failures
+   are fixed before proceeding
+4. **Update the plan** — mark acceptance criteria as complete
+5. **Review** — dual review gate on the step's changes
+6. **Commit** — atomic commit including code and updated plan
+
+Steps are executed strictly in order. No code is committed
+until it passes build, test, lint, and review. If a step
+fails repeatedly, execution stops and the issue is surfaced
+to the user.
+
+### 6. Verification
+
+After all steps complete, a final verification pass runs
+build, test, and lint against the full project, confirms
+every acceptance criterion is checked off, and verifies no
+uncommitted changes remain.
 
 ## Agents
 
 | Agent | Role |
 |-------|------|
-| `orchestrate` | Coordinates the full pipeline: research, plan, review, implement |
-| `research` | Deep-dives into the codebase and external sources to build task context |
-| `plan` | Breaks work into small, ordered steps with acceptance criteria |
-| `review` | Evaluates plans and implementations as a principal engineer reviewer |
-| `implement` | Implements a single plan step using TDD, then commits atomically |
+| `researcher` | Deep-dives into the codebase and external sources to build task context |
+| `code-reviewer` | Principal engineer reviewing design, scalability, performance, and architecture |
+| `domain-expert` | Domain-specific reviewer auto-configured per project during onboarding |
 
 ## Skills
 
 | Skill | Description |
 |-------|-------------|
-| `/commit-changes` | Stages and commits with conventional message formatting and signoff |
-| `/build` | Auto-detects the build system (Make, Cargo, npm, Go, etc.) and runs it |
+| `/onboard` | Sets up `.sweatshop/`, detects toolchains, and configures the domain expert |
+| `/requirements-analysis` | Structured dialogue to surface requirements before any implementation |
+| `/research` | Dispatches the researcher agent for deep codebase and external context |
+| `/writing-plans` | Breaks work into small steps with acceptance criteria |
+| `/executing-plans` | Walks through an approved plan step by step with TDD and review gates |
+| `/requesting-review` | Dispatches code-reviewer and domain-expert in parallel |
+| `/verification` | Runs build, test, lint and confirms all acceptance criteria are met |
+| `/build` | Auto-detects the build system and runs it |
 | `/test` | Auto-detects the test framework and runs tests |
 | `/lint` | Auto-detects the linter and runs it |
+| `/commit-changes` | Stages and commits with conventional message formatting and signoff |
+
+## Toolchain auto-detection
+
+The `/onboard`, `/build`, `/test`, and `/lint` skills
+auto-detect your project's toolchain by checking for config
+files in priority order. Detected commands are cached in
+`.sweatshop/memory.json` with a config file hash so
+re-detection only happens when your config changes.
+
+Supported build systems: Make, Cargo, npm/yarn/pnpm, Go,
+.NET, Gradle, Maven, CMake, Meson.
+
+Supported test frameworks: make test, cargo test, npm test,
+go test, dotnet test, gradle test, mvn test, pytest.
+
+Supported linters: make lint, cargo clippy, npm run lint,
+golangci-lint, dotnet format, gradle check, mvn checkstyle,
+ruff, flake8, pylint.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
