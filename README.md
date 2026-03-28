@@ -199,7 +199,10 @@ The `/onboard`, `/build`, `/test`, and `/lint` skills
 auto-detect your project's toolchain by checking for config
 files in priority order. Detected commands are cached in
 `.sweatshop/memory.json` with a config file hash so
-re-detection only happens when your config changes.
+re-detection only happens when your config changes. Domain
+configuration (type, focus areas, review criteria) is stored
+separately in `.sweatshop/domain.json` and checked into
+version control.
 
 Supported build systems: Make, Cargo, npm/yarn/pnpm, Go,
 .NET, Gradle, Maven, CMake, Meson.

@@ -9,8 +9,8 @@ allowed-tools: Bash(bash:*), Bash(sha256sum:*), Bash(git add:*), Bash(git status
 ## Step 1 — Initialise the directory
 
 Find the plugin's `scripts/init.sh` using Glob, then run it
-with `bash <path>`. Confirm `.sweatshop/memory.json` exists
-afterwards.
+with `bash <path>`. Confirm `.sweatshop/memory.json` and
+`.sweatshop/domain.json` exist afterwards.
 
 ## Step 2 — Detect toolchains
 
@@ -88,11 +88,17 @@ If the user provides refinement, update accordingly. If no
 domain is detected, ask the user to describe their project's
 domain and focus areas.
 
-## Step 4 — Write memory
+## Step 4 — Write memory and domain config
+
+Two files are written — toolchain cache and domain config are
+kept separate so domain metadata can be checked into version
+control while the volatile toolchain cache stays gitignored.
+
+### Toolchain cache (`.sweatshop/memory.json`)
 
 For each detected toolchain, hash its config file with
 `sha256sum` and write the result into `.sweatshop/memory.json`.
-Merge all entries in a single write. The file structure is:
+Merge all entries in a single write:
 
 ```json
 {
@@ -106,7 +112,19 @@ Merge all entries in a single write. The file structure is:
     },
     "test": { "..." },
     "lint": { "..." }
-  },
+  }
+}
+```
+
+Omit any toolchain key that was not detected.
+
+### Domain config (`.sweatshop/domain.json`)
+
+Write the domain configuration into `.sweatshop/domain.json`:
+
+```json
+{
+  "version": 1,
   "domain": {
     "type": "<detected or user-specified domain>",
     "focus_areas": ["area1", "area2", "area3"],
@@ -117,8 +135,7 @@ Merge all entries in a single write. The file structure is:
 }
 ```
 
-Omit any toolchain key that was not detected. Set
-`user_refined` to `true` if the user adjusted the domain
+Set `user_refined` to `true` if the user adjusted the domain
 detection.
 
 ## Step 5 — Report

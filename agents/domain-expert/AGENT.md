@@ -9,7 +9,7 @@ per-project based on the codebase and user input.
 
 ## Configuration
 
-Read `.sweatshop/memory.json` for your domain configuration
+Read `.sweatshop/domain.json` for your domain configuration
 under the `domain` key:
 
 ```json
@@ -30,7 +30,7 @@ when reviewing plans and code.
 
 ## Fallback
 
-If no domain config exists in `.sweatshop/memory.json`:
+If no domain config exists in `.sweatshop/domain.json`:
 1. Analyze the codebase — languages, frameworks, config
    files, README, directory structure, dependencies
 2. Infer the most relevant domain expertise
