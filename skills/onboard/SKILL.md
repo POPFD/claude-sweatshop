@@ -9,10 +9,50 @@ allowed-tools: Bash(bash:*), Bash(sha256sum:*), Bash(git add:*), Bash(git status
 ## Step 1 — Initialise the directory
 
 Find the plugin's `scripts/init.sh` using Glob, then run it
-with `bash <path>`. Confirm `.sweatshop/memory.json` and
-`.sweatshop/domain.json` exist afterwards.
+with `bash <path>`. The script is idempotent: it only creates
+files that do not already exist, so running it on an already-
+onboarded project is safe. Confirm `.sweatshop/memory.json`
+and `.sweatshop/domain.json` exist afterwards.
 
-## Step 2 — Detect toolchains
+## Step 2 — Check for existing onboarding
+
+Before detecting anything, read the two JSON files written by
+init.sh and decide whether this project is already onboarded.
+The data in these files persists across dev sessions and is
+authoritative — do NOT clobber it without explicit user
+consent.
+
+A project is considered **already onboarded** if EITHER:
+- `memory.json` contains a non-empty `toolchain` object, OR
+- `domain.json` contains a `domain` object with a `type`
+  field set.
+
+### If already onboarded
+
+1. Summarise the existing configuration to the user:
+   - Toolchain commands currently cached (build / test /
+     lint) and the config file each was detected from.
+   - Domain type, focus areas, and whether it was
+     `user_refined`.
+2. Ask the user to choose one of:
+   - **(a) keep as-is (default)** — skip remaining steps,
+     report and exit. Nothing is written.
+   - **(b) fill missing sections only** — run detection for
+     toolchains/domain entries that are absent, leave
+     populated entries untouched.
+   - **(c) re-detect everything (overwrite)** — run the
+     full detection flow and overwrite existing entries.
+     Preserve `domain.user_refined: true` across the
+     overwrite if it was set previously, unless the user
+     explicitly refines the new detection again.
+3. Wait for an explicit choice before continuing. Do not
+   assume.
+
+### If not yet onboarded
+
+Proceed directly to Step 3.
+
+## Step 3 — Detect toolchains
 
 Run the detection logic for each toolchain below. For each one,
 check for config files in the project root using the detection
@@ -59,7 +99,7 @@ Detection order:
 9. .flake8 / setup.cfg with flake8 -> flake8 .
 10. .pylintrc -> pylint .
 
-## Step 3 — Detect project domain
+## Step 4 — Detect project domain
 
 Analyze the codebase to auto-detect the project's domain for
 the domain-expert agent. Check: languages, frameworks, config
@@ -88,11 +128,26 @@ If the user provides refinement, update accordingly. If no
 domain is detected, ask the user to describe their project's
 domain and focus areas.
 
-## Step 4 — Write memory and domain config
+## Step 5 — Write memory and domain config
 
 Two files are written — toolchain cache and domain config are
 kept separate so domain metadata can be checked into version
 control while the volatile toolchain cache stays gitignored.
+
+**Respect the mode chosen in Step 2:**
+
+- **keep as-is** — you should not have reached this step.
+  Abort and report.
+- **fill missing only** — read each file first, then merge:
+  only write entries whose key is absent. Never replace an
+  existing entry. If a `toolchain.build` already exists,
+  leave it alone even if re-detection would pick a different
+  command.
+- **re-detect everything** — overwrite every entry with
+  fresh detection results. Carry over
+  `domain.user_refined: true` from the previous file if it
+  was set, unless the user just refined the new detection
+  (in which case leave it `true` from the new run).
 
 ### Toolchain cache (`.sweatshop/memory.json`)
 
@@ -138,7 +193,7 @@ Write the domain configuration into `.sweatshop/domain.json`:
 Set `user_refined` to `true` if the user adjusted the domain
 detection.
 
-## Step 5 — Report
+## Step 6 — Report
 
 Show the user a summary of what was set up:
 
