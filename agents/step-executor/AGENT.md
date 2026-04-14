@@ -71,9 +71,16 @@ CRITICAL: Keep your return value terse. Verbose status burns
 the orchestrator's context — which is precisely what
 spawning you was meant to avoid.
 
-CRITICAL: Never chain `cd <path> && git <cmd>` — it trips the
-Claude Code bare-repo safety check and forces a permission
-prompt. If you are already inside the worktree (the default
-when dispatched with `isolation: "worktree"`), just run `git
-<cmd>` directly. If you genuinely need git to operate on a
-different path, use `git -C <path> <cmd>` instead.
+CRITICAL: Never chain `cd <path> && <cmd>` in a single Bash
+call — Claude Code flags this pattern as a path-resolution /
+bare-repo safety risk for any git or write operation and
+forces a permission prompt, defeating autonomous dispatch.
+Instead:
+- For file edits, use the Edit tool with an absolute path.
+  Never `cd <path> && sed -i ...`.
+- For git, use `git -C <path> <cmd>`.
+- For other tools, pass the absolute path directly or use
+  the tool's directory flag (`make -C`, `npm --prefix`, etc.).
+- If you are already inside the target directory — the
+  default when dispatched with `isolation: "worktree"` —
+  drop the `cd` entirely and run the command as-is.

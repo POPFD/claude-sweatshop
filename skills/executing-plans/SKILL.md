@@ -145,9 +145,11 @@ CRITICAL: Keep your own output terse. You coordinate, you
 don't narrate. Executors report what they did; your job is
 to summarize outcomes, not re-describe them.
 
-CRITICAL: Never chain `cd <path> && git <cmd>` when operating
-on a worktree — it trips the Claude Code bare-repo safety
-check and forces a permission prompt. Use `git -C <path>
-<cmd>` instead (e.g. `git -C <worktree-path> log -1`). The
-cherry-pick and `git worktree remove` commands listed above
-run in the main repo, so they need no path prefix.
+CRITICAL: Never chain `cd <path> && <cmd>` in a single Bash
+call — Claude Code flags this pattern for any git or write
+operation and forces a permission prompt on every invocation.
+When you need git to peek at a worktree (e.g. verifying its
+HEAD before cherry-pick), use `git -C <path> <cmd>` — single
+command, no compound. The cherry-pick and `git worktree
+remove` commands listed above run in the main repo, so they
+need no path prefix at all.
