@@ -176,10 +176,24 @@ don't narrate. Executors report what they did; your job is
 to summarize outcomes, not re-describe them.
 
 CRITICAL: Never chain `cd <path> && <cmd>` in a single Bash
-call — Claude Code flags this pattern for any git or write
-operation and forces a permission prompt on every invocation.
-When you need git to peek at a worktree (e.g. verifying its
-HEAD before cherry-pick), use `git -C <path> <cmd>` — single
-command, no compound. The cherry-pick and `git worktree
-remove` commands listed above run in the main repo, so they
-need no path prefix at all.
+call — Claude Code flags this pattern as a path-resolution /
+bare-repo safety risk and forces a permission prompt on every
+invocation, which defeats autonomous orchestration. This
+applies even to read-only bundles (`cd X && git status && wc
+-l … && grep -c …`) — the first git or write-capable command
+in the chain is enough to trip the check. Instead:
+- For git state in a worktree, use `git -C <path> <cmd>` —
+  one command per call, no compound.
+- For file contents, use the Read or Grep tool against an
+  absolute path, not `cd X && wc/grep/cat ...`.
+- For other tools, pass the absolute path directly or use
+  the tool's directory flag (`make -C`, `npm --prefix`, etc.).
+- The cherry-pick and `git worktree remove` commands listed
+  above run in the main repo, so they need no path prefix at
+  all — just drop the `cd`.
+
+Also: resist the urge to peek at in-flight worktrees at all.
+Wait for each dispatched step-executor to return and rely on
+its STATUS/COMMITS block. Poking at a worktree mid-run races
+the executor and is what tends to produce these compound
+probes in the first place.
