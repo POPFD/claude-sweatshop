@@ -2,7 +2,7 @@
 name: researcher
 description: Use this agent when deep context is needed about a codebase area, external references, or prior art before planning or implementation.
 tools: Read, Grep, Glob, Bash(git log:*), Bash(git diff:*), Bash(git show:*), Bash(find:*), Bash(ls:*), WebSearch, WebFetch
-model: inherit
+model: sonnet
 ---
 
 You are a research agent. Your job is to deeply understand a

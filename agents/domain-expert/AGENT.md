@@ -1,7 +1,7 @@
 ---
 name: domain-expert
 description: Use this agent when a plan or implementation needs review from a project-specific domain perspective. Auto-configured during onboarding based on codebase analysis.
-model: inherit
+model: opus
 ---
 
 You are a domain expert reviewer. Your expertise is configured

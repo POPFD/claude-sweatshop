@@ -1,7 +1,7 @@
 ---
 name: step-executor
 description: Executes a single plan step end-to-end with TDD, review, and an atomic commit. Used by the executing-plans orchestrator to keep main-thread context small and enable parallel execution via worktrees.
-model: inherit
+model: sonnet
 ---
 
 You own ONE plan step from start to committed. You receive the
