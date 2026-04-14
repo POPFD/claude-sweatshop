@@ -82,15 +82,18 @@ flowchart TD
     D -->|approved| E["User Approval"]
     E --> F["Commit Plan"]
 
-    F --> G["Write Tests"]
+    F --> W["Compute Waves\n(deps + parallelism)"]
+    W --> X["Dispatch step-executor(s)\nparallel → worktrees"]
+    X --> G["Write Tests"]
     G --> H["Implement"]
     H --> I["Build / Test / Lint"]
     I -->|fail| H
     I -->|pass| J{"Dual Review"}
     J -->|rework| H
-    J -->|approved| K["Commit Step"]
-    K -->|next step| G
-    K -->|all done| L["Verification"]
+    J -->|approved| K["Commit in worktree"]
+    K --> CP["Cherry-pick onto branch\n(union-merge plan file)"]
+    CP -->|next wave| W
+    CP -->|all done| L["Verification"]
 
     style A fill:#4a5568,color:#fff
     style L fill:#2f855a,color:#fff
@@ -123,8 +126,15 @@ external findings, and recommendations.
 Work is broken into small, incremental, decoupled steps —
 each producing an atomic, reviewable commit. Every step
 includes a description, rationale, acceptance criteria
-(as checkboxes), and a list of files likely involved. Plans
-are saved to `.sweatshop/plans/` and committed before
+(as checkboxes), a list of files likely involved, and two
+metadata fields the executor uses to parallelize work:
+
+- **Depends on** — prior step numbers that must land first.
+- **Parallelizable** — whether the step can run concurrently
+  with its wave-mates. Defaults to `yes` when there are no
+  dependencies.
+
+Plans are saved to `.sweatshop/plans/` and committed before
 execution begins.
 
 ### 4. Review (plans and code)
@@ -144,9 +154,23 @@ If either reviewer requests changes, feedback is applied and
 re-reviewed (up to 3 iterations before escalating to the
 user).
 
-### 5. Execution (TDD per step)
+### 5. Execution (TDD per step, parallelized by wave)
 
-Each plan step follows a strict sequence:
+The `/executing-plans` skill is a thin **orchestrator**. It
+never writes code itself — it dispatches each step to a
+`step-executor` subagent so the main conversation's context
+stays small even on long runs.
+
+The orchestrator walks the plan's dependency graph and
+groups steps into **waves**: sets of steps whose
+dependencies are all already landed. Within a wave,
+parallelizable steps are dispatched concurrently, each in
+its own **git worktree** branched off the current HEAD. When
+the wave finishes, the orchestrator cherry-picks each
+worktree's commits back onto the branch in plan order.
+
+Inside each step-executor, the old per-step sequence still
+applies:
 
 1. **Write tests first** — tests that verify the step's
    acceptance criteria (they should fail initially)
@@ -157,10 +181,19 @@ Each plan step follows a strict sequence:
 5. **Review** — dual review gate on the step's changes
 6. **Commit** — atomic commit including code and updated plan
 
-Steps are executed strictly in order. No code is committed
-until it passes build, test, lint, and review. If a step
-fails repeatedly, execution stops and the issue is surfaced
-to the user.
+Cross-step integration is handled by the orchestrator:
+
+- **Cherry-pick order** follows plan step numbers so the
+  history stays readable.
+- **Plan-file conflicts** (two worktrees flipping different
+  checkboxes in the same file) are auto-resolved by unioning
+  the `[x]` marks.
+- **Code-file conflicts** in a parallel wave mean the steps
+  were not actually independent; the orchestrator aborts the
+  cherry-pick and surfaces the issue so the plan can be
+  revised.
+- **Failures** from any step-executor stop the pipeline
+  before partial results are cherry-picked.
 
 ### 6. Verification
 
@@ -176,6 +209,7 @@ uncommitted changes remain.
 | `researcher` | Deep-dives into the codebase and external sources to build task context |
 | `code-reviewer` | Principal engineer reviewing design, scalability, performance, and architecture |
 | `domain-expert` | Domain-specific reviewer auto-configured per project during onboarding |
+| `step-executor` | Owns a single plan step end-to-end (TDD → build/test/lint → review → commit), dispatched per-step by the executing-plans orchestrator (in a worktree for parallel waves) |
 
 ## Skills
 

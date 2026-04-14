@@ -7,7 +7,9 @@ description: Use when you have a spec or requirements and need to break work int
 
 Break work into small, incremental, decoupled steps with
 clear acceptance criteria. Each step produces an atomic,
-reviewable commit.
+reviewable commit. Mark dependencies and parallelizability
+so the executor can run independent steps concurrently in
+worktrees and cherry-pick them back.
 
 ## Process
 
@@ -17,18 +19,22 @@ reviewable commit.
    patterns, existing architecture. Optionally invoke the
    `research` skill for deeper context.
 3. **Identify dependencies and constraints** — what must
-   happen in what order.
-4. **Produce a structured plan** — numbered steps following
+   happen in what order. Record this as per-step
+   `Depends on` metadata.
+4. **Identify parallelism** — steps that touch fully disjoint
+   files and share no ordering requirement can run in
+   parallel. Mark them `Parallelizable: yes`.
+5. **Produce a structured plan** — numbered steps following
    the format below.
-5. **Save the plan** — write to:
+6. **Save the plan** — write to:
    `.sweatshop/plans/YYYY-MM-DD-short-summary.md`
    Run the plugin's `scripts/init.sh` first to ensure
    `.sweatshop/` exists.
-6. **Review the plan** — invoke `requesting-review` to have
+7. **Review the plan** — invoke `requesting-review` to have
    both code-reviewer and domain-expert evaluate the plan.
    If changes requested, revise and re-review until
    approved.
-7. **Present to user** — show the full approved plan
+8. **Present to user** — show the full approved plan
    including all steps, acceptance criteria, and files.
    Explicitly ask:
    - Whether the plan looks correct and complete
@@ -37,9 +43,9 @@ reviewable commit.
    - Whether there are additional constraints to consider
    Wait for explicit approval. Do NOT begin implementation
    until the user approves.
-8. **Commit the plan** — invoke /commit-changes.
-9. **Hand off to execution** — invoke the `executing-plans`
-   skill.
+9. **Commit the plan** — invoke /commit-changes.
+10. **Hand off to execution** — invoke the `executing-plans`
+    skill.
 
 ## Step format
 
@@ -54,6 +60,14 @@ does.
 **Why:** Why this step is necessary and how it fits into the
 overall goal.
 
+**Depends on:** <comma-separated step numbers, or `none`>
+
+**Parallelizable:** yes | no
+  Default: `yes` when `Depends on: none`, otherwise `no`.
+  Set `no` when the step touches files another concurrent
+  step also touches, or when ordering matters for
+  correctness even if dependencies are technically met.
+
 **Acceptance criteria:**
 - [ ] Criterion 1
 - [ ] Criterion 2
@@ -61,6 +75,21 @@ overall goal.
 **Files likely involved:**
 - List of files that will probably be touched
 ```
+
+## Parallelism guidance
+
+Two steps in the same wave (same set of satisfied
+dependencies) can safely run in parallel only if:
+
+- Their `Files likely involved` lists do not overlap.
+- Neither step's tests need the other's code to be present.
+- No implicit ordering (migrations, schema changes, config
+  that must load in order) couples them.
+
+When in doubt, mark `Parallelizable: no`. A serial step that
+could have been parallel costs a little wall time; a parallel
+step that shouldn't have been costs a cherry-pick conflict
+and a replanning round.
 
 ## Rules
 
@@ -72,6 +101,11 @@ the previous but is as decoupled as possible.
 
 CRITICAL: Prefer many small steps over few large steps. Err
 on the side of being too granular.
+
+CRITICAL: Every step must declare `Depends on` and
+`Parallelizable` — the executor relies on both to compute
+waves. Missing fields force it to fall back to fully serial
+execution.
 
 CRITICAL: Do NOT implement anything. This skill produces only
 the plan.

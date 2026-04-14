@@ -5,75 +5,142 @@ description: Use when you have an approved plan to execute step by step with TDD
 
 # Executing Plans
 
-Walk through an approved plan one step at a time. Each step
-follows a test-first workflow, passes review, and lands as
-its own commit.
+You are an ORCHESTRATOR. You do not write code, run tests,
+or review diffs yourself. You dispatch each plan step to a
+`step-executor` subagent, run independent steps concurrently
+in worktrees, and cherry-pick their commits back onto the
+current branch. Your context stays small so long runs do
+not blow out.
 
-## Process per step
+## Preparation
 
-For each step in the plan, follow this exact sequence:
+1. **Read the plan** from `.sweatshop/plans/…`.
+2. **Build the dependency graph** from each step's
+   `Depends on` field.
+3. **Compute waves:**
+   - Wave 1 = all steps whose dependencies are empty
+     (`Depends on: none`).
+   - Each subsequent wave = all steps whose dependencies
+     are entirely contained in already-completed waves.
+4. **Within each wave, split** into:
+   - **parallel group** — steps with `Parallelizable: yes`.
+   - **serial group** — steps with `Parallelizable: no`.
+5. If any step is missing `Depends on` or `Parallelizable`,
+   treat the whole plan as a single serial sequence and
+   warn the user.
 
-1. **Gather context** — optionally invoke the `research`
-   skill if the step touches unfamiliar code.
-2. **Write tests first** — create tests that verify the
-   step's acceptance criteria. The tests should fail at
-   this point.
-3. **Implement** — write the minimum code to make the tests
-   pass. Keep changes focused on this step only.
-4. **Build** — invoke /build to verify compilation.
-5. **Test** — invoke /test to verify all tests pass (not
-   just the new ones).
-6. **Lint** — invoke /lint to verify code quality.
-7. **Update the plan** — mark this step's acceptance
-   criteria as complete: change `- [ ]` to `- [x]`. Only
-   modify criteria for the current step.
-8. **Review** — invoke `requesting-review` on the step's
-   changes. If changes requested, fix and re-review.
-9. **Commit** — invoke /commit-changes. The commit includes
-   both code changes and the updated plan file.
-10. **Report progress** — briefly state which step finished
-    and what's next.
-11. **Move to next step.**
+## Dispatching a step-executor
 
-## Execution rules
+Each dispatch is one `Agent` tool call with
+`subagent_type: "step-executor"`. The prompt MUST contain:
 
-CRITICAL: Execute steps strictly in order. Do not skip steps
-or execute steps in parallel.
+- Step number and title.
+- The step's full `What`, `Why`, `Acceptance criteria`, and
+  `Files likely involved`, copied verbatim from the plan.
+- The absolute path to the plan file.
+- A note that the executor must return the structured
+  STATUS/STEP/COMMITS/NOTES block and nothing else.
 
-CRITICAL: Tests come first. Do not write implementation code
-before tests exist for it.
+Parallel dispatches additionally pass `isolation: "worktree"`
+so each executor works in its own worktree branched from the
+current HEAD.
 
-CRITICAL: If build, test, or lint fails, fix the issue and
-re-run. Do not commit broken code.
+## Executing a wave
 
-CRITICAL: Every step must be reviewed before moving to the
-next step.
+### Serial group
 
-CRITICAL: If a step fails repeatedly (build/test/lint won't
-pass), stop and report the issue to the user. Do not continue
-to the next step.
+For each step, in plan order:
+1. Dispatch one step-executor (no isolation — it works on
+   the main branch).
+2. Wait for its return.
+3. If `STATUS` is not `success`, STOP and report to the
+   user. Do not continue.
+4. Continue to the next serial step.
 
-CRITICAL: Do not modify code unrelated to the current step.
-No drive-by refactors, no cleanups, no "while I'm here"
-changes.
+### Parallel group
+
+1. Record the current HEAD commit — this is the base every
+   worktree will branch from.
+2. Dispatch ALL parallel step-executors in a SINGLE message
+   (multiple `Agent` tool-use blocks in one response), each
+   with `isolation: "worktree"`. They run concurrently.
+3. Wait for every dispatch to return.
+4. If any returned `STATUS != success`, STOP and report.
+   Do NOT cherry-pick partial results. Surface the failure
+   so the user can decide whether to replan.
+5. **Cherry-pick in plan order.** For each step in
+   ascending step-number order, for each SHA listed in its
+   `COMMITS` (oldest first):
+   a. `git cherry-pick <sha>`
+   b. If the cherry-pick fails, run `git status` and
+      inspect the conflicted paths:
+      - **If conflicts are ONLY in `.sweatshop/plans/*.md`:**
+        auto-resolve by unioning the `[x]` marks. For every
+        acceptance-criterion line, use `- [x]` if either
+        side flipped it. Then `git add <plan>` and
+        `git cherry-pick --continue`.
+      - **If any other file is conflicted:** run
+        `git cherry-pick --abort`, STOP, and report. The
+        steps were not actually independent — the planner
+        must replan.
+6. Clean up each worktree after all its commits are
+   picked: `git worktree remove <worktree-path>`.
+
+### Waves with both groups
+
+Run the serial group first (in plan order), then the
+parallel group. Serial steps in a wave often establish
+scaffolding that the parallel steps rely on being present
+on disk, even if formal dependencies are satisfied.
 
 ## Mid-execution replanning
 
-If during implementation it becomes clear the plan needs
-adjustment (e.g., a step is too large or assumptions were
-wrong):
+If a step-executor returns `STATUS: failed` or `blocked`,
+or a cherry-pick reveals non-plan-file conflicts:
 
-1. Stop implementation.
-2. Re-plan the remaining steps.
+1. Stop dispatching.
+2. Re-plan the remaining steps (typically by invoking the
+   planner skills or adjusting dependencies).
 3. Invoke `requesting-review` on the revised plan.
-4. Get user approval before continuing.
-5. Update the plan file and commit.
+4. Get explicit user approval before continuing.
+5. Update and commit the plan file.
+6. Resume from the adjusted plan.
 
 ## Completion
 
-After all steps are complete:
+After all waves complete successfully:
 
-1. Invoke the `verification` skill to confirm everything
-   passes.
-2. Report a completion summary — what was accomplished
-   across all steps.
+1. Invoke the `verification` skill.
+2. Report a completion summary: total steps, number of
+   waves, serial vs parallel counts, and the range of
+   commit SHAs produced.
+
+## Rules
+
+CRITICAL: Never execute step work yourself. Always delegate
+to a `step-executor` subagent. Your job is dispatch,
+cherry-pick, and progress tracking.
+
+CRITICAL: Respect the dependency graph. A step never runs
+before every step it depends on has fully landed on the
+current branch.
+
+CRITICAL: For a parallel wave, ALL step-executors must be
+dispatched in ONE message so they run concurrently. Sending
+them sequentially defeats the purpose.
+
+CRITICAL: Auto-resolve plan-file cherry-pick conflicts by
+taking the union of `[x]` marks. Do NOT auto-resolve
+conflicts in any other file — those mean the plan lied
+about independence and require replanning.
+
+CRITICAL: Always clean up worktrees after their commits are
+picked. Leaking worktrees clutters the user's repo.
+
+CRITICAL: If a step fails or a hard conflict appears, stop
+and surface to the user. Do not paper over failures to
+keep the pipeline moving.
+
+CRITICAL: Keep your own output terse. You coordinate, you
+don't narrate. Executors report what they did; your job is
+to summarize outcomes, not re-describe them.
