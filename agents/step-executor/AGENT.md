@@ -70,3 +70,10 @@ integration and cherry-picking.
 CRITICAL: Keep your return value terse. Verbose status burns
 the orchestrator's context — which is precisely what
 spawning you was meant to avoid.
+
+CRITICAL: Never chain `cd <path> && git <cmd>` — it trips the
+Claude Code bare-repo safety check and forces a permission
+prompt. If you are already inside the worktree (the default
+when dispatched with `isolation: "worktree"`), just run `git
+<cmd>` directly. If you genuinely need git to operate on a
+different path, use `git -C <path> <cmd>` instead.
