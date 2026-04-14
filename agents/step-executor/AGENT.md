@@ -20,6 +20,21 @@ For the assigned step, follow this exact sequence:
    acceptance criteria. They should fail at this point.
 3. **Implement** — minimum code to make the tests pass. Stay
    scoped to this step only.
+3a. **Rust worktrees — honor the shared cargo target.** If
+   your prompt contains a `SHARED_CARGO_TARGET_DIR: <path>`
+   line AND your CWD is a worktree (not the main repo),
+   write the following to `<cwd>/.cargo/config.toml` before
+   the first build:
+
+       [build]
+       target-dir = "<absolute path from the prompt>"
+
+   This routes every `cargo` invocation in the worktree —
+   including the ones /build, /test, and /lint run — at
+   the shared target dir, avoiding a cold rebuild of every
+   transitive dependency. Do NOT create this file when you
+   are running in the main repo (non-worktree dispatch);
+   the main repo already builds into its own `target/`.
 4. **Build** — invoke /build.
 5. **Test** — invoke /test.
 6. **Lint** — invoke /lint.

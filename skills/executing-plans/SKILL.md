@@ -45,6 +45,36 @@ Parallel dispatches additionally pass `isolation: "worktree"`
 so each executor works in its own worktree branched from the
 current HEAD.
 
+### Rust projects — shared cargo target
+
+If the repo root contains a `Cargo.toml`, each worktree
+would otherwise start with an empty `target/` and pay a
+full cold rebuild of every dependency. For workspaces with
+heavy transitive crates (solana-*, tokio, etc.) this
+dominates executor latency and makes parallel dispatch
+*slower* than serial — N worktrees = N concurrent cold
+builds on one disk.
+
+Before dispatching a parallel wave in a Rust project:
+
+1. Resolve the main repo's target path:
+   `<absolute repo root>/target`.
+2. Add one line to every parallel step-executor prompt:
+
+       SHARED_CARGO_TARGET_DIR: <absolute path>
+
+The step-executor points its worktree's cargo at that
+path so every build — main repo, sibling worktrees,
+future interactive work — shares a single artifact cache.
+Cargo's per-package file-locking briefly serialises
+concurrent writes to the same crate but everything else
+runs in parallel.
+
+Serial dispatches don't need this — they already run in
+the main repo and share `target/` by default. Only pass
+`SHARED_CARGO_TARGET_DIR` to parallel (worktree)
+dispatches.
+
 ## Executing a wave
 
 ### Serial group
