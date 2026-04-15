@@ -99,27 +99,53 @@ Detection order:
 9. .flake8 / setup.cfg with flake8 -> flake8 .
 10. .pylintrc -> pylint .
 
-## Step 4 — Detect project domain
+## Step 4 — Ask the user for the domain expert
 
-Analyze the codebase to auto-detect the project's domain for
-the domain-expert agent. Check: languages, frameworks, config
-files, README, directory structure, and dependencies.
+The user drives this step. Before doing any analysis yourself,
+ask them what kind of domain expert this project needs. A
+short, open question works best:
 
-Detection examples:
-- Solidity / Hardhat / Foundry → **crypto/DeFi**: smart
-  contract security, gas optimization, reentrancy prevention
-- C/C++ with perf configs, lock-free structures →
-  **high-performance systems**: latency, memory management,
+> "What should the domain expert for this project be? For
+> example: crypto/DeFi, high-performance systems, frontend/UX,
+> ML/data, distributed systems, embedded, game engines, etc.
+> You can also describe it in your own words — I'll shape the
+> focus areas and review criteria around your answer."
+
+Wait for an explicit answer. Do not guess. Treat whatever the
+user says as authoritative for `domain.type`. Common shapes
+of answers and how to handle them:
+
+- **A named domain** (e.g. "crypto/DeFi", "frontend/UX") —
+  use it directly as `type`. Derive sensible `focus_areas`
+  and `review_criteria` for that domain (see examples below).
+- **A free-form description** (e.g. "low-latency trading
+  engine, care about allocator behaviour and lock
+  contention") — use a short label for `type` and lift the
+  user's own phrasing into `focus_areas` / `review_criteria`.
+- **"Not sure" / "you pick"** — only then fall back to
+  auto-detecting from languages, frameworks, config files,
+  README, directory structure, and dependencies. Present your
+  best guess back to the user for confirmation before writing.
+
+Reference examples for deriving focus areas and review
+criteria from a named domain:
+
+- crypto/DeFi → smart contract security, gas optimization,
+  reentrancy prevention
+- high-performance systems → latency, memory management,
   concurrency
-- React / Vue / Angular with CSS → **frontend/UX**:
-  accessibility, responsive design, performance
-- PyTorch / TensorFlow, dataset directories → **ML/data**:
-  model accuracy, data pipeline reliability, reproducibility
-- Go / gRPC / Kubernetes configs → **distributed systems**:
-  fault tolerance, consistency, observability
+- frontend/UX → accessibility, responsive design, performance
+- ML/data → model accuracy, data pipeline reliability,
+  reproducibility
+- distributed systems → fault tolerance, consistency,
+  observability
 
-Also identify the **domain-relevant paths** — glob patterns
-covering the files whose domain semantics matter. Examples:
+Once the domain is settled, identify the **domain-relevant
+paths** — glob patterns covering the files whose domain
+semantics matter. Infer these from the actual directory
+structure of *this* project, not a generic template. Prefer a
+small list of 2–5 globs that together cover where the domain
+logic actually lives. Reference shapes:
 
 - crypto/DeFi → `["contracts/**/*.sol", "scripts/deploy/**"]`
 - frontend/UX → `["src/**/*.{tsx,jsx,vue,css,scss}", "public/**"]`
@@ -127,20 +153,11 @@ covering the files whose domain semantics matter. Examples:
 - distributed systems → `["internal/**/*.go", "proto/**", "deploy/**"]`
 - high-perf systems → `["src/**/*.{c,cc,cpp,h,hpp,rs}"]`
 
-Infer patterns from the actual directory structure of *this*
-project, not a generic template. Prefer a small list of 2–5
-globs that together cover where domain logic actually lives.
-
-Present the detected domain to the user:
-
-> "I detected this project as **[domain type]** with focus
-> areas: [list]. Domain-relevant paths: [globs]. Does this
-> look right, or would you like to adjust?"
-
-If the user provides refinement, update accordingly
-(including `paths`). If no domain is detected, ask the user
-to describe their project's domain, focus areas, and the
-paths they'd want a domain reviewer to watch.
+Show the user the final assembled configuration (type, focus
+areas, review criteria, paths) and ask if they want to tweak
+anything before it is written. Because the user supplied the
+`type` themselves, set `domain.user_refined: true` when
+writing the file.
 
 ## Step 5 — Write memory and domain config
 
