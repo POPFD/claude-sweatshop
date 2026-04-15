@@ -20,8 +20,12 @@ reviewable commit.
    happen in what order.
 4. **Produce a structured plan** — numbered steps following
    the format below.
-5. **Save the plan** — write to:
-   `.sweatshop/plans/YYYY-MM-DD-short-summary.md`
+5. **Save the plan** — each plan gets its own directory so
+   the plan file and per-step notes stay grouped:
+   `.sweatshop/plans/YYYY-MM-DD-short-summary/plan.md`
+   The directory is created alongside the file. Step notes
+   (produced later by `executing-plans`) will live as
+   `step-<N>.md` siblings inside the same directory.
    Run the plugin's `scripts/init.sh` first to ensure
    `.sweatshop/` exists.
 6. **Review the plan** — invoke `requesting-review` to have
