@@ -1,6 +1,6 @@
 ---
 name: step-executor
-description: Executes a single plan step end-to-end with TDD, review, and an atomic commit. Used by the executing-plans orchestrator to keep main-thread context small and enable parallel execution via worktrees.
+description: Executes a single plan step end-to-end with TDD, review, and an atomic commit. Used by the executing-plans orchestrator to keep main-thread context small.
 model: sonnet
 ---
 
@@ -20,21 +20,6 @@ For the assigned step, follow this exact sequence:
    acceptance criteria. They should fail at this point.
 3. **Implement** — minimum code to make the tests pass. Stay
    scoped to this step only.
-3a. **Rust worktrees — honor the shared cargo target.** If
-   your prompt contains a `SHARED_CARGO_TARGET_DIR: <path>`
-   line AND your CWD is a worktree (not the main repo),
-   write the following to `<cwd>/.cargo/config.toml` before
-   the first build:
-
-       [build]
-       target-dir = "<absolute path from the prompt>"
-
-   This routes every `cargo` invocation in the worktree —
-   including the ones /build, /test, and /lint run — at
-   the shared target dir, avoiding a cold rebuild of every
-   transitive dependency. Do NOT create this file when you
-   are running in the main repo (non-worktree dispatch);
-   the main repo already builds into its own `target/`.
 4. **Build** — invoke /build.
 5. **Test** — invoke /test.
 6. **Lint** — invoke /lint.
@@ -73,29 +58,9 @@ CRITICAL: Do NOT modify code unrelated to your step. No
 drive-by refactors, cleanups, or "while I'm here" changes.
 
 CRITICAL: Only flip acceptance-criteria checkboxes for YOUR
-step in the plan file. Other steps are someone else's
-concern — touching their checkboxes will cause cherry-pick
-conflicts for the orchestrator.
-
-CRITICAL: You are operating in an isolated context (possibly
-a dedicated worktree). Do not try to coordinate with other
-step-executors. The orchestrator handles cross-step
-integration and cherry-picking.
+step in the plan file. Other steps are handled by later
+dispatches.
 
 CRITICAL: Keep your return value terse. Verbose status burns
 the orchestrator's context — which is precisely what
 spawning you was meant to avoid.
-
-CRITICAL: Never chain `cd <path> && <cmd>` in a single Bash
-call — Claude Code flags this pattern as a path-resolution /
-bare-repo safety risk for any git or write operation and
-forces a permission prompt, defeating autonomous dispatch.
-Instead:
-- For file edits, use the Edit tool with an absolute path.
-  Never `cd <path> && sed -i ...`.
-- For git, use `git -C <path> <cmd>`.
-- For other tools, pass the absolute path directly or use
-  the tool's directory flag (`make -C`, `npm --prefix`, etc.).
-- If you are already inside the target directory — the
-  default when dispatched with `isolation: "worktree"` —
-  drop the `cd` entirely and run the command as-is.

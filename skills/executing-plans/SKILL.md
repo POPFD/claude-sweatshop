@@ -6,32 +6,21 @@ description: Use when you have an approved plan to execute step by step with TDD
 # Executing Plans
 
 You are an ORCHESTRATOR. You do not write code, run tests,
-or review diffs yourself. You dispatch each plan step to a
-`step-executor` subagent, run independent steps concurrently
-in worktrees, and cherry-pick their commits back onto the
-current branch. Your context stays small so long runs do
-not blow out.
+or review diffs yourself. You walk the plan one step at a
+time and dispatch each step to a `step-executor` subagent.
+Delegating keeps your context small — all the build, test,
+lint, and review noise stays inside the subagent and only a
+terse status block comes back.
 
 ## Preparation
 
 1. **Read the plan** from `.sweatshop/plans/…`.
-2. **Build the dependency graph** from each step's
-   `Depends on` field.
-3. **Compute waves:**
-   - Wave 1 = all steps whose dependencies are empty
-     (`Depends on: none`).
-   - Each subsequent wave = all steps whose dependencies
-     are entirely contained in already-completed waves.
-4. **Within each wave, split** into:
-   - **parallel group** — steps with `Parallelizable: yes`.
-   - **serial group** — steps with `Parallelizable: no`.
-5. If any step is missing `Depends on` or `Parallelizable`,
-   treat the whole plan as a single serial sequence and
-   warn the user.
+2. **Confirm step order** — plans are executed strictly in
+   the order steps are listed. No skipping, no reordering.
 
 ## Dispatching a step-executor
 
-Each dispatch is one `Agent` tool call with
+Each step is one `Agent` tool call with
 `subagent_type: "step-executor"`. The prompt MUST contain:
 
 - Step number and title.
@@ -41,96 +30,27 @@ Each dispatch is one `Agent` tool call with
 - A note that the executor must return the structured
   STATUS/STEP/COMMITS/NOTES block and nothing else.
 
-Parallel dispatches additionally pass `isolation: "worktree"`
-so each executor works in its own worktree branched from the
-current HEAD.
+Dispatches run on the main branch — no worktree isolation.
+The executor commits directly onto the current branch.
 
-### Rust projects — shared cargo target
-
-If the repo root contains a `Cargo.toml`, each worktree
-would otherwise start with an empty `target/` and pay a
-full cold rebuild of every dependency. For workspaces with
-heavy transitive crates (solana-*, tokio, etc.) this
-dominates executor latency and makes parallel dispatch
-*slower* than serial — N worktrees = N concurrent cold
-builds on one disk.
-
-Before dispatching a parallel wave in a Rust project:
-
-1. Resolve the main repo's target path:
-   `<absolute repo root>/target`.
-2. Add one line to every parallel step-executor prompt:
-
-       SHARED_CARGO_TARGET_DIR: <absolute path>
-
-The step-executor points its worktree's cargo at that
-path so every build — main repo, sibling worktrees,
-future interactive work — shares a single artifact cache.
-Cargo's per-package file-locking briefly serialises
-concurrent writes to the same crate but everything else
-runs in parallel.
-
-Serial dispatches don't need this — they already run in
-the main repo and share `target/` by default. Only pass
-`SHARED_CARGO_TARGET_DIR` to parallel (worktree)
-dispatches.
-
-## Executing a wave
-
-### Serial group
+## Execution loop
 
 For each step, in plan order:
-1. Dispatch one step-executor (no isolation — it works on
-   the main branch).
-2. Wait for its return.
-3. If `STATUS` is not `success`, STOP and report to the
-   user. Do not continue.
-4. Continue to the next serial step.
 
-### Parallel group
-
-1. Record the current HEAD commit — this is the base every
-   worktree will branch from.
-2. Dispatch ALL parallel step-executors in a SINGLE message
-   (multiple `Agent` tool-use blocks in one response), each
-   with `isolation: "worktree"`. They run concurrently.
-3. Wait for every dispatch to return.
-4. If any returned `STATUS != success`, STOP and report.
-   Do NOT cherry-pick partial results. Surface the failure
-   so the user can decide whether to replan.
-5. **Cherry-pick in plan order.** For each step in
-   ascending step-number order, for each SHA listed in its
-   `COMMITS` (oldest first):
-   a. `git cherry-pick <sha>`
-   b. If the cherry-pick fails, run `git status` and
-      inspect the conflicted paths:
-      - **If conflicts are ONLY in `.sweatshop/plans/*.md`:**
-        auto-resolve by unioning the `[x]` marks. For every
-        acceptance-criterion line, use `- [x]` if either
-        side flipped it. Then `git add <plan>` and
-        `git cherry-pick --continue`.
-      - **If any other file is conflicted:** run
-        `git cherry-pick --abort`, STOP, and report. The
-        steps were not actually independent — the planner
-        must replan.
-6. Clean up each worktree after all its commits are
-   picked: `git worktree remove <worktree-path>`.
-
-### Waves with both groups
-
-Run the serial group first (in plan order), then the
-parallel group. Serial steps in a wave often establish
-scaffolding that the parallel steps rely on being present
-on disk, even if formal dependencies are satisfied.
+1. Dispatch one step-executor and wait for it to return.
+2. If `STATUS` is not `success`, STOP and report to the
+   user. Do not continue to the next step.
+3. Briefly note which step finished and what's next, then
+   move to the next step.
 
 ## Mid-execution replanning
 
-If a step-executor returns `STATUS: failed` or `blocked`,
-or a cherry-pick reveals non-plan-file conflicts:
+If a step-executor returns `STATUS: failed` or `blocked`, or
+if during execution it becomes clear the plan needs
+adjustment:
 
 1. Stop dispatching.
-2. Re-plan the remaining steps (typically by invoking the
-   planner skills or adjusting dependencies).
+2. Re-plan the remaining steps.
 3. Invoke `requesting-review` on the revised plan.
 4. Get explicit user approval before continuing.
 5. Update and commit the plan file.
@@ -138,62 +58,25 @@ or a cherry-pick reveals non-plan-file conflicts:
 
 ## Completion
 
-After all waves complete successfully:
+After every step finishes successfully:
 
 1. Invoke the `verification` skill.
-2. Report a completion summary: total steps, number of
-   waves, serial vs parallel counts, and the range of
-   commit SHAs produced.
+2. Report a completion summary: total steps executed and
+   the range of commit SHAs produced.
 
 ## Rules
 
 CRITICAL: Never execute step work yourself. Always delegate
-to a `step-executor` subagent. Your job is dispatch,
-cherry-pick, and progress tracking.
+to a `step-executor` subagent. Your job is dispatch and
+progress tracking — the subagent keeps build/test/lint/review
+output out of your context.
 
-CRITICAL: Respect the dependency graph. A step never runs
-before every step it depends on has fully landed on the
-current branch.
+CRITICAL: Execute steps strictly in order. One step at a
+time, no parallel dispatch, no skipping.
 
-CRITICAL: For a parallel wave, ALL step-executors must be
-dispatched in ONE message so they run concurrently. Sending
-them sequentially defeats the purpose.
-
-CRITICAL: Auto-resolve plan-file cherry-pick conflicts by
-taking the union of `[x]` marks. Do NOT auto-resolve
-conflicts in any other file — those mean the plan lied
-about independence and require replanning.
-
-CRITICAL: Always clean up worktrees after their commits are
-picked. Leaking worktrees clutters the user's repo.
-
-CRITICAL: If a step fails or a hard conflict appears, stop
-and surface to the user. Do not paper over failures to
-keep the pipeline moving.
+CRITICAL: If a step fails, stop and surface to the user. Do
+not paper over failures to keep the pipeline moving.
 
 CRITICAL: Keep your own output terse. You coordinate, you
 don't narrate. Executors report what they did; your job is
 to summarize outcomes, not re-describe them.
-
-CRITICAL: Never chain `cd <path> && <cmd>` in a single Bash
-call — Claude Code flags this pattern as a path-resolution /
-bare-repo safety risk and forces a permission prompt on every
-invocation, which defeats autonomous orchestration. This
-applies even to read-only bundles (`cd X && git status && wc
--l … && grep -c …`) — the first git or write-capable command
-in the chain is enough to trip the check. Instead:
-- For git state in a worktree, use `git -C <path> <cmd>` —
-  one command per call, no compound.
-- For file contents, use the Read or Grep tool against an
-  absolute path, not `cd X && wc/grep/cat ...`.
-- For other tools, pass the absolute path directly or use
-  the tool's directory flag (`make -C`, `npm --prefix`, etc.).
-- The cherry-pick and `git worktree remove` commands listed
-  above run in the main repo, so they need no path prefix at
-  all — just drop the `cd`.
-
-Also: resist the urge to peek at in-flight worktrees at all.
-Wait for each dispatched step-executor to return and rely on
-its STATUS/COMMITS block. Poking at a worktree mid-run races
-the executor and is what tends to produce these compound
-probes in the first place.
