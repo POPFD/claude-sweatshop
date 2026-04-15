@@ -82,15 +82,14 @@ flowchart TD
     D -->|approved| E["User Approval"]
     E --> F["Commit Plan"]
 
-    F --> X["Dispatch step-executor"]
-    X --> G["Write Tests"]
+    F --> G["Write Tests"]
     G --> H["Implement"]
     H --> I["Build / Test / Lint"]
     I -->|fail| H
     I -->|pass| J{"Dual Review"}
     J -->|rework| H
     J -->|approved| K["Commit Step"]
-    K -->|next step| X
+    K -->|next step| G
     K -->|all done| L["Verification"]
 
     style A fill:#4a5568,color:#fff
@@ -147,13 +146,9 @@ user).
 
 ### 5. Execution (TDD per step)
 
-The `/executing-plans` skill is a thin **orchestrator**. It
-never writes code itself — it dispatches each step to a
-`step-executor` subagent so the main conversation's context
-stays small even on long runs. Steps are executed strictly
-in plan order, one at a time.
-
-Inside each step-executor, the per-step sequence is:
+The `/executing-plans` skill walks the plan one step at a
+time, strictly in plan order. Each step follows the same
+test-first sequence:
 
 1. **Write tests first** — tests that verify the step's
    acceptance criteria (they should fail initially)
@@ -164,10 +159,9 @@ Inside each step-executor, the per-step sequence is:
 5. **Review** — dual review gate on the step's changes
 6. **Commit** — atomic commit including code and updated plan
 
-The executor returns a terse status block. If any step
-fails, execution stops and the issue is surfaced to the
-user — no further steps are dispatched until the plan is
-adjusted and re-approved.
+If any step fails and cannot be resolved, execution stops
+and the issue is surfaced to the user — no further steps
+run until the plan is adjusted and re-approved.
 
 ### 6. Verification
 
@@ -183,7 +177,6 @@ uncommitted changes remain.
 | `researcher` | Deep-dives into the codebase and external sources to build task context |
 | `code-reviewer` | Principal engineer reviewing design, scalability, performance, and architecture |
 | `domain-expert` | Domain-specific reviewer auto-configured per project during onboarding |
-| `step-executor` | Owns a single plan step end-to-end (TDD → build/test/lint → review → commit), dispatched per-step by the executing-plans orchestrator |
 
 ## Skills
 
