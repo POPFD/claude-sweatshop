@@ -118,15 +118,29 @@ Detection examples:
 - Go / gRPC / Kubernetes configs → **distributed systems**:
   fault tolerance, consistency, observability
 
+Also identify the **domain-relevant paths** — glob patterns
+covering the files whose domain semantics matter. Examples:
+
+- crypto/DeFi → `["contracts/**/*.sol", "scripts/deploy/**"]`
+- frontend/UX → `["src/**/*.{tsx,jsx,vue,css,scss}", "public/**"]`
+- ML/data → `["models/**", "pipelines/**", "data/**/*.py"]`
+- distributed systems → `["internal/**/*.go", "proto/**", "deploy/**"]`
+- high-perf systems → `["src/**/*.{c,cc,cpp,h,hpp,rs}"]`
+
+Infer patterns from the actual directory structure of *this*
+project, not a generic template. Prefer a small list of 2–5
+globs that together cover where domain logic actually lives.
+
 Present the detected domain to the user:
 
 > "I detected this project as **[domain type]** with focus
-> areas: [list]. Does this look right, or would you like to
-> adjust?"
+> areas: [list]. Domain-relevant paths: [globs]. Does this
+> look right, or would you like to adjust?"
 
-If the user provides refinement, update accordingly. If no
-domain is detected, ask the user to describe their project's
-domain and focus areas.
+If the user provides refinement, update accordingly
+(including `paths`). If no domain is detected, ask the user
+to describe their project's domain, focus areas, and the
+paths they'd want a domain reviewer to watch.
 
 ## Step 5 — Write memory and domain config
 
@@ -142,7 +156,11 @@ control while the volatile toolchain cache stays gitignored.
   only write entries whose key is absent. Never replace an
   existing entry. If a `toolchain.build` already exists,
   leave it alone even if re-detection would pick a different
-  command.
+  command. This applies to sub-fields too: if
+  `domain.paths` is absent from an otherwise-populated
+  `domain` object (e.g. the project was onboarded before the
+  field was introduced), detect and add it without touching
+  the other fields.
 - **re-detect everything** — overwrite every entry with
   fresh detection results. Carry over
   `domain.user_refined: true` from the previous file if it
@@ -184,6 +202,7 @@ Write the domain configuration into `.sweatshop/domain.json`:
     "type": "<detected or user-specified domain>",
     "focus_areas": ["area1", "area2", "area3"],
     "review_criteria": ["criterion1", "criterion2", "criterion3"],
+    "paths": ["<glob1>", "<glob2>"],
     "detected_at": "<ISO 8601 timestamp>",
     "user_refined": false
   }
@@ -193,6 +212,12 @@ Write the domain configuration into `.sweatshop/domain.json`:
 Set `user_refined` to `true` if the user adjusted the domain
 detection.
 
+The `paths` field is used by the `requesting-review` skill to
+decide when to skip the domain-expert reviewer on changes that
+don't touch domain-relevant code. Omit the field only if no
+meaningful subset of the repo can be identified — in that case
+domain review will run unconditionally.
+
 ## Step 6 — Report
 
 Show the user a summary of what was set up:
@@ -200,7 +225,7 @@ Show the user a summary of what was set up:
 - `.sweatshop/` directory and `.gitignore`
 - For each toolchain: the detected command and config file,
   or "not detected" if nothing matched
-- Domain expert configuration: type, focus areas, and
-  review criteria
+- Domain expert configuration: type, focus areas, review
+  criteria, and domain-relevant paths
 - Stage the new files with `git add -N .sweatshop/`
 - Suggest `/commit-changes` to commit the scaffolding
