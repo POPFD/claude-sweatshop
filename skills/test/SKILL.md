@@ -1,7 +1,7 @@
 ---
 name: test
 description: Use when the user asks to run tests. Auto-detects the test framework and runs the appropriate test command.
-allowed-tools: Bash(make:*), Bash(cargo:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go test:*), Bash(dotnet test:*), Bash(gradle:*), Bash(mvn:*), Bash(pytest:*), Bash(python:*), Bash(cat:*), Bash(ls:*), Bash(sha256sum:*), Bash(mkdir:*), Read, Write, Glob
+allowed-tools: Bash(make:*), Bash(cargo:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go test:*), Bash(dotnet test:*), Bash(gradle:*), Bash(mvn:*), Bash(pytest:*), Bash(python:*), Bash(cat:*), Bash(ls:*), Bash(sha256sum:*), Bash(mkdir:*), Bash(mktemp:*), Bash(tail:*), Bash(rm:*), Read, Write, Glob
 ---
 
 # Run the project's tests
@@ -56,15 +56,54 @@ Run the plugin's `scripts/init.sh` to ensure `.sweatshop/`
 exists (use Glob to locate it, then `bash <path>`). If the file
 already exists, merge — do not overwrite other keys.
 
+## Output handling
+
+Unlike build and lint, a successful test run has a useful
+summary (`42 passed, 3 skipped`) that should survive. On
+failure the assertion output and stack traces are what the
+user needs. Run the resolved command through this wrapper:
+
+```bash
+out=$(mktemp)
+<resolved command> >"$out" 2>&1
+ec=$?
+if [ $ec -ne 0 ]; then
+  tail -c 20000 "$out"
+  echo "---"
+  echo "Tests failed (exit $ec)"
+else
+  tail -n 20 "$out"
+fi
+rm -f "$out"
+exit $ec
+```
+
+On success only the last 20 lines are surfaced (enough for
+the summary line across all common frameworks). On failure
+the tail of the output surfaces the failing assertions.
+
+### Verbose mode
+
+If the user's invocation includes `--verbose` or `-v`, skip
+the wrapper entirely and run the resolved command directly so
+the full output streams into context. Strip the flag before
+passing remaining arguments to the underlying test command.
+
 ## Rules
 
 CRITICAL: If no test framework is detected, report this clearly
 and do NOT guess or run arbitrary commands.
 
-CRITICAL: Report test results clearly — number of tests passed,
-failed, and skipped. If tests fail, include the failure output
-so the user can diagnose.
+CRITICAL: Always use the output-handling wrapper unless the
+user requested verbose mode. Do not invoke the test command
+raw — that defeats the token-reduction the wrapper provides.
+
+CRITICAL: When reporting, quote the summary line from the
+wrapper output verbatim (counts of passed/failed/skipped). If
+the wrapper's 20-line tail doesn't contain the summary for an
+unusual framework, suggest rerunning with `--verbose`.
 
 If the user provides additional arguments, pass them through
 to the underlying test command (e.g. a specific test file or
-filter pattern).
+filter pattern), after stripping the `--verbose` / `-v` flag
+if present.

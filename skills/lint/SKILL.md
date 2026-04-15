@@ -1,7 +1,7 @@
 ---
 name: lint
 description: Use when the user asks to lint or check code style. Auto-detects the linter and runs the appropriate lint command.
-allowed-tools: Bash(make:*), Bash(cargo:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go vet:*), Bash(golangci-lint:*), Bash(dotnet format:*), Bash(gradle:*), Bash(mvn:*), Bash(ruff:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(cat:*), Bash(ls:*), Bash(sha256sum:*), Bash(mkdir:*), Read, Write, Glob
+allowed-tools: Bash(make:*), Bash(cargo:*), Bash(npm:*), Bash(yarn:*), Bash(pnpm:*), Bash(go vet:*), Bash(golangci-lint:*), Bash(dotnet format:*), Bash(gradle:*), Bash(mvn:*), Bash(ruff:*), Bash(flake8:*), Bash(pylint:*), Bash(eslint:*), Bash(cat:*), Bash(ls:*), Bash(sha256sum:*), Bash(mkdir:*), Bash(mktemp:*), Bash(tail:*), Bash(rm:*), Read, Write, Glob
 ---
 
 # Lint the project
@@ -57,13 +57,50 @@ Run the plugin's `scripts/init.sh` to ensure `.sweatshop/`
 exists (use Glob to locate it, then `bash <path>`). If the file
 already exists, merge — do not overwrite other keys.
 
+## Output handling
+
+A clean lint run has no signal — the exit code is the
+message. Violations are the value when they occur. Run the
+resolved command through this wrapper to keep clean runs
+cheap:
+
+```bash
+out=$(mktemp)
+<resolved command> >"$out" 2>&1
+ec=$?
+if [ $ec -ne 0 ]; then
+  tail -c 20000 "$out"
+  echo "---"
+  echo "Lint violations found (exit $ec)"
+else
+  echo "Lint OK — no violations"
+fi
+rm -f "$out"
+exit $ec
+```
+
+On success the Bash result is a single `Lint OK` line. On
+non-zero exit the tail of the output surfaces the violations.
+
+### Verbose mode
+
+If the user's invocation includes `--verbose` or `-v`, skip
+the wrapper entirely and run the resolved command directly so
+the full output streams into context. Strip the flag before
+passing remaining arguments to the underlying lint command.
+
 ## Rules
 
 CRITICAL: If no linter is detected, report this clearly and
 do NOT guess or run arbitrary commands.
 
-CRITICAL: Report lint results clearly. If there are violations,
-include them so the user can decide whether to fix or ignore.
+CRITICAL: Always use the output-handling wrapper unless the
+user requested verbose mode. Do not invoke the lint command
+raw — that defeats the token-reduction the wrapper provides.
+
+CRITICAL: When the wrapper surfaces violations, report them
+verbatim so the user can decide whether to fix or ignore.
 
 If the user provides additional arguments, pass them through
-to the underlying lint command.
+to the underlying lint command (after stripping the
+`--verbose` / `-v` flag if present).
