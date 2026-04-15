@@ -230,7 +230,7 @@ Set `user_refined` to `true` if the user adjusted the domain
 detection.
 
 The `paths` field is used by the `requesting-review` skill to
-decide when to skip the domain-expert reviewer on changes that
+decide when to skip the domain review section on changes that
 don't touch domain-relevant code. Omit the field only if no
 meaningful subset of the repo can be identified — in that case
 domain review will run unconditionally.

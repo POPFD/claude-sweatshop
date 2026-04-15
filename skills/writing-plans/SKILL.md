@@ -29,9 +29,9 @@ reviewable commit.
    Run the plugin's `scripts/init.sh` first to ensure
    `.sweatshop/` exists.
 6. **Review the plan** — invoke `requesting-review` to have
-   both code-reviewer and domain-expert evaluate the plan.
-   If changes requested, revise and re-review until
-   approved.
+   the reviewer evaluate the plan (code quality and, where in
+   scope, domain). If changes requested, revise and re-review
+   until approved.
 7. **Present to user** — show the full approved plan
    including all steps, acceptance criteria, and files.
    Explicitly ask:

@@ -175,8 +175,7 @@ uncommitted changes remain.
 | Agent | Role |
 |-------|------|
 | `researcher` | Deep-dives into the codebase and external sources to build task context |
-| `code-reviewer` | Principal engineer reviewing design, scalability, performance, and architecture |
-| `domain-expert` | Domain-specific reviewer auto-configured per project during onboarding |
+| `reviewer` | Principal-engineer code review plus per-project domain review in a single pass |
 
 ## Skills
 
@@ -187,7 +186,7 @@ uncommitted changes remain.
 | `/research` | Dispatches the researcher agent for deep codebase and external context |
 | `/writing-plans` | Breaks work into small steps with acceptance criteria |
 | `/executing-plans` | Walks through an approved plan step by step with TDD and review gates |
-| `/requesting-review` | Dispatches code-reviewer and domain-expert in parallel |
+| `/requesting-review` | Dispatches the reviewer with code-only or code+domain mode based on the diff |
 | `/verification` | Runs build, test, lint and confirms all acceptance criteria are met |
 | `/build` | Auto-detects the build system and runs it |
 | `/test` | Auto-detects the test framework and runs tests |
