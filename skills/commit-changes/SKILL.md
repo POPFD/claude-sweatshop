@@ -24,3 +24,9 @@ use the configured git user.name and user.email from .gitconfig.
 CRITICAL: There is no co-authoring
 
 CRITICAL: Never use "user@example.com" or any email addresses in the commit message.
+
+CRITICAL: Do NOT chain `cd <path> && git ...` in a single Bash call — compound
+commands with `cd` + `git` trigger bare-repository-attack permission prompts.
+If the repo is not the current working directory, use `git -C <path> ...`
+instead (e.g. `git -C /path/to/repo add ...`, `git -C /path/to/repo commit ...`).
+Run each git invocation as its own Bash call.
