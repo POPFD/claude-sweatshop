@@ -37,13 +37,20 @@ named `step-<N>.md`.
 
 For each step in the plan, follow this exact sequence:
 
-1. **Load prior context** — re-read `plan.md`, then read
-   every existing `step-*.md` in the plan directory for
-   prior completed steps. These notes are the authoritative
-   record of decisions and constraints from earlier steps;
-   conversation history may have been compacted and lost
-   detail. Do NOT rely on memory of prior steps — read the
-   notes.
+1. **Load prior context — only when needed.** Re-read
+   `plan.md` and every existing `step-*.md` ONLY if one of
+   these is true:
+   - This is the first step you are executing in the current
+     session.
+   - Auto-compaction has fired since the last step (prior
+     conversation no longer visible).
+   - You are unsure whether a fact from an earlier step is
+     still in your context.
+
+   Otherwise skip this step — re-reading the same files every
+   iteration is the largest token leak in this workflow. The
+   notes are the authoritative source after compaction; before
+   compaction, the conversation already has them.
 2. **Gather additional context** — if this step touches
    unfamiliar code not covered by prior notes, invoke the
    `research` skill.
@@ -63,10 +70,21 @@ For each step in the plan, follow this exact sequence:
    format in the "Per-step notes" section below. These notes
    must survive context compaction and carry forward anything
    later steps will need to know.
-10. **Review** — invoke the `requesting-review` skill on the
-    step's changes (code + plan update + step notes). If
-    changes are requested, apply fixes and re-review (max 3
-    iterations before escalating).
+10. **Review (risk-gated)** — invoke the `requesting-review`
+    skill ONLY when the step is non-trivial. Skip review for:
+    - Pure docs/comment changes.
+    - Test-only additions where the test follows existing
+      patterns.
+    - Mechanical renames, formatting, or moves with no logic
+      change.
+    - Config/tooling edits with no runtime effect.
+
+    Always review for: new logic, API/contract changes,
+    security-sensitive code, anything the plan flags as
+    high-risk, and any step where domain `paths` match.
+
+    If review requests changes, apply fixes and re-review (max
+    3 iterations before escalating).
 11. **Commit** — invoke /commit-changes. The commit must
     include code changes, the updated plan file, AND the
     step notes file as one atomic commit.
@@ -161,7 +179,8 @@ CRITICAL: Every step MUST produce a step-notes file and
 include it in the step's commit. Skipping notes breaks the
 compaction-safety contract that later steps rely on.
 
-CRITICAL: Before implementing step N, read all prior
-`step-*.md` notes files in the plan directory. Do NOT rely
-on conversation memory for cross-step context — assume it
-has been compacted.
+CRITICAL: After auto-compaction (or when starting a fresh
+session mid-plan), read `plan.md` and all prior `step-*.md`
+notes before continuing. Within a single uncompacted session
+do NOT re-read them every step — the conversation already
+has them and re-reading is the dominant token cost.

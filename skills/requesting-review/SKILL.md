@@ -65,23 +65,16 @@ so we only pay for one exploration of the diff.
 
 ## Output
 
-Present the reviewer's sections directly. If the domain
-section was skipped via `code-only` mode, note that briefly
-with the reason.
+Forward the reviewer's output verbatim — do not re-summarize
+or re-list its bullets. The reviewer is already constrained
+to terse, blocking-only output; wrapping it in extra
+narration defeats that.
 
-```
-## Review Result: [APPROVED / CHANGES REQUESTED]
-
-### Code Review
-**Verdict:** approve / request changes
-- [feedback items]
-
-### Domain Review
-**Verdict:** approve / request changes
-- [feedback items]
-
-_Domain review skipped: <one-line reason>_   ← only if skipped
-```
+- All verdicts approve → reply with one line:
+  `Review: APPROVED` (add `(domain skipped: <reason>)` only if
+  applicable).
+- Any verdict requests changes → paste the reviewer's
+  sections as-is, with no additional commentary.
 
 ## Rules
 
