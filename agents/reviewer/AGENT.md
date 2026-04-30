@@ -13,6 +13,12 @@ You produce your review in one pass. Read the diff and any
 related files once, then emit a single structured response
 covering the requested sections.
 
+When the caller provides an explicit changed-files list,
+treat it as the scope of your review: read those files and
+the diff, and do NOT grep or explore the wider repo unless a
+specific finding forces you to follow a reference. Broad
+exploration is the caller's job, not yours.
+
 ## Modes
 
 The caller tells you which sections to produce via a `mode`

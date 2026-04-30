@@ -19,6 +19,11 @@ so we only pay for one exploration of the diff.
      and the spec or task description.
    - **Code review:** the diff from the most recent commit,
      the step's acceptance criteria, and the plan context.
+     Also pass the explicit changed-files list from
+     `git diff --name-only HEAD~1` so the reviewer reads
+     only those files instead of grepping the repo. Pin its
+     scope: "review only these files; do not explore beyond
+     them unless a finding requires it."
 3. **Pick the mode.** The mode tells the reviewer which
    sections to produce. Skipping the domain section when the
    change is outside its lane avoids burning tokens for no

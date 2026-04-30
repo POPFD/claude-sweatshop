@@ -58,19 +58,20 @@ For each step in the plan, follow this exact sequence:
    acceptance criteria. They should fail at this point.
 4. **Implement** — minimum code to make the tests pass. Stay
    scoped to this step only.
-5. **Build** — invoke /build.
-6. **Test** — invoke /test (the full suite, not only new
-   tests).
-7. **Lint** — invoke /lint.
-8. **Update the plan file** — flip this step's
+5. **Verify** — invoke the `verification` skill once. It
+   runs build, test, and lint as a single pass and is
+   silent on success. Do NOT invoke `/build`, `/test`, and
+   `/lint` separately — that triples the skill-load
+   overhead for no extra signal.
+6. **Update the plan file** — flip this step's
    acceptance-criteria boxes from `- [ ]` to `- [x]`. Do NOT
    modify any other step's boxes.
-9. **Write step notes** — save
+7. **Write step notes** — save
    `.sweatshop/plans/<plan-name>/step-<N>.md` using the
    format in the "Per-step notes" section below. These notes
    must survive context compaction and carry forward anything
    later steps will need to know.
-10. **Review (risk-gated)** — invoke the `requesting-review`
+8. **Review (risk-gated)** — invoke the `requesting-review`
     skill ONLY when the step is non-trivial. Skip review for:
     - Pure docs/comment changes.
     - Test-only additions where the test follows existing
@@ -85,10 +86,10 @@ For each step in the plan, follow this exact sequence:
 
     If review requests changes, apply fixes and re-review (max
     3 iterations before escalating).
-11. **Commit** — invoke /commit-changes. The commit must
+9. **Commit** — invoke /commit-changes. The commit must
     include code changes, the updated plan file, AND the
     step notes file as one atomic commit.
-12. **Report progress** — one line: which step finished and
+10. **Report progress** — one line: which step finished and
     what's next. Do NOT prompt the user about compaction.
     Auto-compaction handles context pressure on its own, and
     step notes guarantee state survives whenever it fires.
