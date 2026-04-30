@@ -45,6 +45,33 @@ reviewable commit.
 9. **Hand off to execution** — invoke the `executing-plans`
    skill.
 
+## Stay high-level
+
+Plans describe **what** each step accomplishes and **why**,
+not **how** to code it. The implementation approach is
+decided during execution (in `executing-plans`), once the
+step is in front of you with full context.
+
+Do NOT include in the plan:
+- Code snippets, function signatures, or pseudocode.
+- Specific class/variable/method names you intend to add.
+- Line-by-line instructions or algorithm walkthroughs.
+- Library API calls or import statements.
+- Schema/SQL/JSON literals beyond naming the shape at a high
+  level (e.g. "add a `users` table with auth fields" is fine;
+  the column list is not).
+
+DO include:
+- The behavior change or capability the step delivers.
+- The rationale and how it fits the overall goal.
+- Acceptance criteria a reviewer can check against.
+- Rough scope hint via files likely involved.
+
+Rule of thumb: if the step text would need to be rewritten
+once you actually start coding, it was too detailed. The
+plan should survive minor implementation pivots without
+edits.
+
 ## Step format
 
 Each step MUST include:
@@ -52,18 +79,18 @@ Each step MUST include:
 ```markdown
 ### Step N: [Short descriptive title]
 
-**What:** A clear, concise description of what this step
-does.
+**What:** A high-level description of what this step
+accomplishes — the behavior or capability, not the code.
 
 **Why:** Why this step is necessary and how it fits into the
 overall goal.
 
 **Acceptance criteria:**
-- [ ] Criterion 1
-- [ ] Criterion 2
+- [ ] Observable, checkable outcomes (not implementation
+      details)
 
 **Files likely involved:**
-- List of files that will probably be touched
+- Rough list of files that will probably be touched
 ```
 
 ## Rules
@@ -79,6 +106,10 @@ on the side of being too granular.
 
 CRITICAL: Do NOT implement anything. This skill produces only
 the plan.
+
+CRITICAL: Keep steps high-level. No code, no pseudocode, no
+named symbols, no API signatures. Implementation decisions
+belong to `executing-plans`, not the plan itself.
 
 CRITICAL: The plan must be reviewed before presenting to the
 user. Do not show unreviewed plans.
