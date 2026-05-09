@@ -1,6 +1,6 @@
 {
   "name": "claude-sweatshop",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "description": "Infrastructure to accelerate day-to-day development using Claude",
   "license": "MIT"
 }

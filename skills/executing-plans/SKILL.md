@@ -180,6 +180,13 @@ CRITICAL: Every step MUST produce a step-notes file and
 include it in the step's commit. Skipping notes breaks the
 compaction-safety contract that later steps rely on.
 
+CRITICAL: Plans are transparent to code and commits. Do NOT
+reference plan steps, gaps, step numbers, or the plan itself
+in code comments or commit messages. Write commits and
+comments as if the plan does not exist — describe the change
+on its own terms. No "Step 3:", "addresses GAP-2", "as
+planned in step-4.md", etc.
+
 CRITICAL: After auto-compaction (or when starting a fresh
 session mid-plan), read `plan.md` and all prior `step-*.md`
 notes before continuing. Within a single uncompacted session
