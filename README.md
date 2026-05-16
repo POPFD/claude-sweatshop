@@ -71,33 +71,64 @@ Run common dev tasks with auto-detection of your toolchain:
 ## How it works
 
 The plugin coordinates a pipeline of specialized agents and
-skills. The full workflow looks like this:
+skills. The main thread acts as an **orchestrator** — it
+delegates heavyweight work (codebase exploration, edits, test
+runs) to subagents so context stays clean across long plans.
+
+### Overall pipeline
 
 ```mermaid
 flowchart TD
-    A["Requirements\nAnalysis"] --> B["Research"]
+    A["Requirements<br/>Analysis"] --> B["Research<br/>(subagent)"]
     B --> C["Write Plan"]
-    C --> D{"Dual Review"}
+    C --> D{"Plan Review<br/>(subagent)"}
     D -->|rework| C
     D -->|approved| E["User Approval"]
     E --> F["Commit Plan"]
-
-    F --> G["Write Tests"]
-    G --> H["Implement"]
-    H --> I["Build / Test / Lint"]
-    I -->|fail| H
-    I -->|pass| J{"Dual Review"}
-    J -->|rework| H
-    J -->|approved| K["Commit Step"]
-    K -->|next step| G
-    K -->|all done| L["Verification"]
+    F --> G["Execute Plan<br/>step-by-step"]
+    G --> L["Final<br/>Verification"]
 
     style A fill:#4a5568,color:#fff
-    style L fill:#2f855a,color:#fff
+    style B fill:#2b6cb0,color:#fff
     style D fill:#6b46c1,color:#fff
-    style J fill:#6b46c1,color:#fff
     style E fill:#d69e2e,color:#fff
+    style G fill:#2c5282,color:#fff
+    style L fill:#2f855a,color:#fff
 ```
+
+### Per-step execution (orchestrator + subagents)
+
+For each plan step, the main thread orchestrates while
+specialized subagents do the work. Step notes
+(`.sweatshop/plans/<name>/step-<N>.md`) are the durable
+handoff between subagents and survive context compaction.
+
+```mermaid
+flowchart TD
+    Start(["Next step"]) --> Impl["Implementation subagent<br/>• research<br/>• failing tests<br/>• implement<br/>• /verification<br/>• flip plan boxes<br/>• write step-N.md"]
+    Impl --> Read["Orchestrator reads<br/>step-N.md + git diff --stat"]
+    Read --> Risk{"Risk-gated?"}
+    Risk -->|trivial<br/>docs / rename / config| Commit
+    Risk -->|non-trivial| Review["Reviewer subagent<br/>(code-only or code+domain)"]
+    Review -->|approved| Commit["Orchestrator commits<br/>code + plan + step-N.md"]
+    Review -->|changes requested| Fix["Fixup subagent<br/>• apply fixes<br/>• re-verify<br/>• update step-N.md"]
+    Fix --> Review
+    Commit --> Next{"More steps?"}
+    Next -->|yes| Start
+    Next -->|no| Done(["Final verification"])
+
+    style Start fill:#4a5568,color:#fff
+    style Impl fill:#2b6cb0,color:#fff
+    style Review fill:#6b46c1,color:#fff
+    style Fix fill:#2b6cb0,color:#fff
+    style Risk fill:#d69e2e,color:#fff
+    style Commit fill:#38a169,color:#fff
+    style Done fill:#2f855a,color:#fff
+```
+
+Subagents (blue/purple) run in isolated contexts and report a
+≤3-line summary back to the orchestrator — diffs and test
+output never enter the main thread.
 
 ### 1. Requirements analysis
 
@@ -129,39 +160,57 @@ execution begins.
 
 ### 4. Review (plans and code)
 
-Every plan and every implementation step goes through a dual
-review gate. Two agents run in parallel:
+Plans and non-trivial code steps go through a single
+`reviewer` agent run that produces both a general code
+review and (when in scope) a domain review in one
+exploration pass. The mode is picked per-invocation:
 
-- **Code reviewer** — a principal engineer evaluating design
-  quality, scalability, performance, technology choices, and
-  alignment with research findings.
-- **Domain expert** — auto-configured during onboarding
-  based on the project's domain (e.g., crypto/DeFi, frontend,
-  ML, distributed systems). Catches domain-specific pitfalls
-  that a general code review would miss.
+- **`code-only`** — used when the diff is docs-only,
+  test-only, a pure rename/format refactor, or changes only
+  files outside the configured `domain.paths`. Produces a
+  principal-engineer code review covering design,
+  performance, scalability, and alignment with research.
+- **`code+domain`** — used when any changed file matches
+  `domain.paths` (or, in fallback mode, when domain-specific
+  invariants are plausibly affected). Adds a domain section
+  driven by the `focus_areas` configured during onboarding
+  (e.g., crypto/DeFi, frontend, ML, distributed systems).
 
-If either reviewer requests changes, feedback is applied and
-re-reviewed (up to 3 iterations before escalating to the
-user).
+Trivial steps (pure docs, mechanical renames, config-only
+edits with no runtime effect) skip review entirely. If any
+verdict requests changes, a **fixup subagent** applies the
+fixes and re-runs verification before re-review — up to 3
+iterations before escalating to the user.
 
-### 5. Execution (TDD per step)
+### 5. Execution (orchestrator + subagents, TDD per step)
 
 The `/executing-plans` skill walks the plan one step at a
-time, strictly in plan order. Each step follows the same
-test-first sequence:
+time, strictly in plan order. The main thread is an
+**orchestrator** — it never implements directly. Per step:
 
-1. **Write tests first** — tests that verify the step's
-   acceptance criteria (they should fail initially)
-2. **Implement** — minimum code to make the tests pass
-3. **Build / Test / Lint** — all three must pass; failures
-   are fixed before proceeding
-4. **Update the plan** — mark acceptance criteria as complete
-5. **Review** — dual review gate on the step's changes
-6. **Commit** — atomic commit including code and updated plan
+1. **Implementation subagent** runs the full TDD loop in its
+   own context: optional `/research`, failing tests, minimum
+   implementation, `/verification` (build + test + lint),
+   flips the plan's `- [ ]` boxes, and writes the step-notes
+   file.
+2. **Orchestrator reads only step notes** plus
+   `git diff --stat` — diffs and test output stay out of the
+   main thread.
+3. **Risk-gated review** — the orchestrator skips review for
+   trivial steps; otherwise dispatches the `reviewer` agent
+   (with the mode chosen from `domain.paths`).
+4. **Fixup subagent** applies any blocking review feedback
+   and updates the step-notes "Review resolutions" section.
+   Then re-review. Max 3 cycles.
+5. **Atomic commit** — orchestrator commits code, updated
+   `plan.md`, and the step-notes file together.
 
-If any step fails and cannot be resolved, execution stops
-and the issue is surfaced to the user — no further steps
-run until the plan is adjusted and re-approved.
+Step notes are the durable handoff: they survive context
+compaction, so a fresh session mid-plan can re-orient just
+by listing `step-*.md` files. If a step fails repeatedly and
+cannot be resolved, execution stops and the issue is
+surfaced — no further steps run until the plan is adjusted
+and re-approved.
 
 ### 6. Verification
 
