@@ -6,8 +6,8 @@ description: Use when you have a spec or requirements and need to break work int
 # Writing Plans
 
 Break work into small, incremental, decoupled steps with
-clear acceptance criteria. Each step produces an atomic,
-reviewable commit.
+clear acceptance criteria. Each step lands as a coherent
+series of small, reviewable commits during execution.
 
 ## Process
 

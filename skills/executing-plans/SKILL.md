@@ -6,8 +6,8 @@ description: Use when you have an approved plan to execute step by step with TDD
 # Executing Plans
 
 Walk through an approved plan one step at a time. Each step
-follows a test-first workflow, passes review, and lands as
-its own commit.
+follows a test-first workflow, passes review, and lands as a
+coherent series of small, human-readable commits.
 
 ## Plan directory layout
 
@@ -56,8 +56,14 @@ For each step in the plan, follow this exact sequence:
    `research` skill.
 3. **Write tests first** — tests that verify the step's
    acceptance criteria. They should fail at this point.
-4. **Implement** — minimum code to make the tests pass. Stay
-   scoped to this step only.
+4. **Implement in chunks** — minimum code to make the tests
+   pass. Stay scoped to this step only. As you work, plan
+   natural commit boundaries: each chunk is one coherent
+   idea a reviewer can read in a single sitting (e.g. "add
+   helper X", "migrate callers to X", "wire X into the
+   endpoint"). Aim for 2–5 chunks per step; one is fine if
+   the step is genuinely small. See "Chunking commits"
+   below for what makes a good boundary.
 5. **Verify** — invoke the `verification` skill once. It
    runs build, test, and lint as a single pass and is
    silent on success. Do NOT invoke `/build`, `/test`, and
@@ -86,9 +92,13 @@ For each step in the plan, follow this exact sequence:
 
     If review requests changes, apply fixes and re-review (max
     3 iterations before escalating).
-9. **Commit** — invoke /commit-changes. The commit must
-    include code changes, the updated plan file, AND the
-    step notes file as one atomic commit.
+9. **Commit each chunk** — invoke /commit-changes once per
+    chunk identified during implementation. Stage only the
+    files belonging to that chunk so each commit reads as a
+    single coherent change. The FINAL commit of the step
+    must also include the updated plan file AND the step
+    notes file. Earlier chunk commits MUST NOT touch the
+    plan or notes files.
 10. **Report progress** — one line: which step finished and
     what's next. Do NOT prompt the user about compaction.
     Auto-compaction handles context pressure on its own, and
@@ -135,6 +145,41 @@ Keep each section tight — bullets, not paragraphs. If a
 section has nothing to record, write "None" rather than
 deleting the heading, so the shape is predictable.
 
+## Chunking commits
+
+A step's diff is broken into multiple commits so a human can
+read the change as a story rather than a wall of unrelated
+edits. Each chunk should be:
+
+- **Coherent** — one idea per commit. "Add the parser",
+  "wire the parser into the request handler", "update
+  callers" are three chunks, not one.
+- **Self-explanatory** — the commit subject describes the
+  chunk on its own terms. A reader who has not seen the
+  plan should understand what changed and why.
+- **Small** — small enough to skim. If a chunk needs a
+  multi-paragraph commit body to explain, it is probably
+  two chunks.
+- **Ordered by dependency** — earlier chunks should not
+  depend on later ones. Prefer "introduce" → "use" →
+  "remove old" sequencing.
+
+Tests-first still applies: the test commit lands before (or
+in the same chunk as) the implementation commit that makes
+it pass. A single "tests + the smallest impl that turns
+them green" chunk is fine when the impl is trivially tied
+to the test; split them when the impl is large enough that
+seeing the failing test commit on its own helps a reviewer.
+
+Verification (build / test / lint) runs once at the end of
+the step over the full chunk series — not per chunk. The
+end-state of the step must be green; individual chunks need
+not be.
+
+If the step genuinely cannot be split (e.g. a single
+one-line config change), commit it as one chunk. Do not
+invent artificial boundaries.
+
 ## Mid-execution replanning
 
 If during implementation it becomes clear the plan needs
@@ -177,8 +222,10 @@ CRITICAL: Do NOT modify code unrelated to the current step.
 No drive-by refactors, cleanups, or "while I'm here" changes.
 
 CRITICAL: Every step MUST produce a step-notes file and
-include it in the step's commit. Skipping notes breaks the
-compaction-safety contract that later steps rely on.
+include it in the step's FINAL commit (alongside the plan
+file update). Skipping notes breaks the compaction-safety
+contract that later steps rely on. Earlier chunk commits
+within the step MUST NOT modify plan.md or any step-*.md.
 
 CRITICAL: Plans are transparent to code and commits. Do NOT
 reference plan steps, gaps, step numbers, or the plan itself

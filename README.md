@@ -3,8 +3,8 @@
 A Claude Code plugin that orchestrates multi-agent workflows
 for day-to-day development. It breaks large tasks into
 researched, planned, reviewed, and incrementally implemented
-steps — each committed atomically with test-driven
-development.
+steps — each landing as a series of small, human-readable
+commits driven by test-driven development.
 
 Inspired by [superpowers](https://github.com/obra/superpowers).
 
@@ -105,12 +105,12 @@ handoff between subagents and survive context compaction.
 
 ```mermaid
 flowchart TD
-    Start(["Next step"]) --> Impl["Implementation subagent<br/>• research<br/>• failing tests<br/>• implement<br/>• /verification<br/>• flip plan boxes<br/>• write step-N.md"]
+    Start(["Next step"]) --> Impl["Implementation subagent<br/>• research<br/>• failing tests<br/>• implement in chunks<br/>• /verification<br/>• flip plan boxes<br/>• write step-N.md"]
     Impl --> Read["Orchestrator reads<br/>step-N.md + git diff --stat"]
     Read --> Risk{"Risk-gated?"}
     Risk -->|trivial<br/>docs / rename / config| Commit
     Risk -->|non-trivial| Review["Reviewer subagent<br/>(code-only or code+domain)"]
-    Review -->|approved| Commit["Orchestrator commits<br/>code + plan + step-N.md"]
+    Review -->|approved| Commit["Orchestrator commits chunks<br/>• chunk 1 (code only)<br/>• chunk 2 (code only)<br/>• …<br/>• final chunk<br/>(code + plan + step-N.md)"]
     Review -->|changes requested| Fix["Fixup subagent<br/>• apply fixes<br/>• re-verify<br/>• update step-N.md"]
     Fix --> Review
     Commit --> Next{"More steps?"}
@@ -152,11 +152,11 @@ external findings, and recommendations.
 ### 3. Planning
 
 Work is broken into small, incremental, decoupled steps —
-each producing an atomic, reviewable commit. Every step
-includes a description, rationale, acceptance criteria
-(as checkboxes), and a list of files likely involved. Plans
-are saved to `.sweatshop/plans/` and committed before
-execution begins.
+each landing during execution as a coherent series of small,
+reviewable commits. Every step includes a description,
+rationale, acceptance criteria (as checkboxes), and a list of
+files likely involved. Plans are saved to `.sweatshop/plans/`
+and committed before execution begins.
 
 ### 4. Review (plans and code)
 
@@ -190,9 +190,10 @@ time, strictly in plan order. The main thread is an
 
 1. **Implementation subagent** runs the full TDD loop in its
    own context: optional `/research`, failing tests, minimum
-   implementation, `/verification` (build + test + lint),
-   flips the plan's `- [ ]` boxes, and writes the step-notes
-   file.
+   implementation split into 2–5 coherent chunks (one idea
+   per chunk), `/verification` (build + test + lint) over the
+   end-state, flips the plan's `- [ ]` boxes, and writes the
+   step-notes file.
 2. **Orchestrator reads only step notes** plus
    `git diff --stat` — diffs and test output stay out of the
    main thread.
@@ -202,8 +203,12 @@ time, strictly in plan order. The main thread is an
 4. **Fixup subagent** applies any blocking review feedback
    and updates the step-notes "Review resolutions" section.
    Then re-review. Max 3 cycles.
-5. **Atomic commit** — orchestrator commits code, updated
-   `plan.md`, and the step-notes file together.
+5. **Chunked commits** — orchestrator invokes
+   `/commit-changes` once per chunk so each commit reads as
+   a single coherent change a human can skim. Earlier chunks
+   are code-only; the final chunk of the step bundles the
+   updated `plan.md` and the step-notes file alongside its
+   code so the step still lands atomically.
 
 Step notes are the durable handoff: they survive context
 compaction, so a fresh session mid-plan can re-orient just
