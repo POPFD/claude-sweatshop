@@ -33,66 +33,138 @@ named `step-<N>.md`.
 2. **Confirm step order** — plans are executed strictly in
    the order steps are listed. No skipping, no reordering.
 
+## Orchestration model
+
+The main thread is an **orchestrator**, not an implementer. The
+heavyweight work per step (research, edits, test runs,
+verification output) happens inside an implementation subagent
+so it never enters the main thread's context. The main thread
+handles review dispatch and the commit — Claude Code does not
+allow subagents to spawn their own subagents, so review must
+stay at this level.
+
+The step-notes file is the durable handoff between subagent and
+main thread, and between steps.
+
 ## Process per step
 
-For each step in the plan, follow this exact sequence:
+For each step in the plan:
 
-1. **Load prior context — only when needed.** Re-read
-   `plan.md` and every existing `step-*.md` ONLY if one of
-   these is true:
-   - This is the first step you are executing in the current
-     session.
-   - Auto-compaction has fired since the last step (prior
-     conversation no longer visible).
-   - You are unsure whether a fact from an earlier step is
-     still in your context.
+1. **Verify orientation (cheap).** Confirm `plan.md` exists and
+   identify the next pending step number. If you have lost
+   track after compaction, list
+   `.sweatshop/plans/<plan-name>/step-*.md` to find the highest
+   N already on disk; the next step is N+1. Do NOT re-read
+   prior step notes from the main thread — that is the
+   subagent's job.
 
-   Otherwise skip this step — re-reading the same files every
-   iteration is the largest token leak in this workflow. The
-   notes are the authoritative source after compaction; before
-   compaction, the conversation already has them.
-2. **Gather additional context** — if this step touches
-   unfamiliar code not covered by prior notes, invoke the
-   `research` skill.
-3. **Write tests first** — tests that verify the step's
-   acceptance criteria. They should fail at this point.
-4. **Implement** — minimum code to make the tests pass. Stay
-   scoped to this step only.
-5. **Verify** — invoke the `verification` skill once. It
-   runs build, test, and lint as a single pass and is
-   silent on success. Do NOT invoke `/build`, `/test`, and
-   `/lint` separately — that triples the skill-load
-   overhead for no extra signal.
-6. **Update the plan file** — flip this step's
-   acceptance-criteria boxes from `- [ ]` to `- [x]`. Do NOT
-   modify any other step's boxes.
-7. **Write step notes** — save
-   `.sweatshop/plans/<plan-name>/step-<N>.md` using the
-   format in the "Per-step notes" section below. These notes
-   must survive context compaction and carry forward anything
-   later steps will need to know.
-8. **Review (risk-gated)** — invoke the `requesting-review`
-    skill ONLY when the step is non-trivial. Skip review for:
-    - Pure docs/comment changes.
-    - Test-only additions where the test follows existing
-      patterns.
-    - Mechanical renames, formatting, or moves with no logic
-      change.
-    - Config/tooling edits with no runtime effect.
+2. **Dispatch the implementation subagent.** Invoke the Agent
+   tool (subagent_type: `claude`) using the prompt template
+   below. The subagent owns: research, failing tests,
+   implementation, verification, plan-file box flips, and the
+   step-notes file. It stops before review and commit.
 
-    Always review for: new logic, API/contract changes,
-    security-sensitive code, anything the plan flags as
-    high-risk, and any step where domain `paths` match.
+3. **Read the returned step notes.** Read only
+   `.sweatshop/plans/<plan-name>/step-<N>.md` — not the diff,
+   not test output, not prior notes. Run `git diff --stat` for
+   a quick scope check.
 
-    If review requests changes, apply fixes and re-review (max
-    3 iterations before escalating).
-9. **Commit** — invoke /commit-changes. The commit must
-    include code changes, the updated plan file, AND the
-    step notes file as one atomic commit.
-10. **Report progress** — one line: which step finished and
-    what's next. Do NOT prompt the user about compaction.
-    Auto-compaction handles context pressure on its own, and
-    step notes guarantee state survives whenever it fires.
+4. **Review (risk-gated).** Invoke the `requesting-review`
+   skill ONLY when the step is non-trivial. Skip review for:
+   - Pure docs/comment changes.
+   - Test-only additions where the test follows existing
+     patterns.
+   - Mechanical renames, formatting, or moves with no logic
+     change.
+   - Config/tooling edits with no runtime effect.
+
+   Always review for: new logic, API/contract changes,
+   security-sensitive code, anything the plan flags as
+   high-risk, and any step where domain `paths` match.
+
+5. **Apply fixes if review requests changes.** Dispatch a
+   *fixup subagent* (subagent_type: `claude`) using the fixup
+   prompt template below. It applies fixes, re-runs
+   verification, and updates the step-notes "Review
+   resolutions" section. Then re-dispatch `requesting-review`.
+   Max 3 iterations before escalating to the user.
+
+6. **Commit.** Invoke `/commit-changes`. The commit must
+   include code changes, the updated `plan.md`, and the
+   step-notes file as one atomic commit.
+
+7. **Report progress.** One line: which step finished and
+   what's next. Do NOT prompt the user about compaction —
+   step notes survive it.
+
+## Implementation subagent prompt template
+
+The subagent starts with no conversation history. Everything it
+needs must be in the prompt:
+
+```
+You are executing step <N> of an approved plan. Work entirely
+within this step — no drive-by changes outside its scope.
+
+Plan: .sweatshop/plans/<plan-name>/plan.md
+Prior step notes (read all that exist):
+  .sweatshop/plans/<plan-name>/step-1.md
+  ...
+  .sweatshop/plans/<plan-name>/step-<N-1>.md
+Step to execute: step <N> in plan.md
+
+Required sequence:
+1. Read plan.md and every prior step-*.md listed above.
+2. If the step touches unfamiliar code, invoke the `research`
+   skill.
+3. Write failing tests for this step's acceptance criteria.
+4. Implement the minimum code to pass them.
+5. Invoke the `verification` skill (single pass; do NOT run
+   /build, /test, /lint separately).
+6. Flip this step's `- [ ]` boxes to `- [x]` in plan.md. Touch
+   no other step's boxes.
+7. Write .sweatshop/plans/<plan-name>/step-<N>.md using the
+   "Per-step notes" format from executing-plans.
+
+Do NOT commit. Do NOT request review. The orchestrator handles
+both. Stop after step 7.
+
+Report back in ≤3 lines:
+- Status: ready-for-review | blocked
+- One-line summary of what changed
+- Pointer to step-<N>.md
+Do NOT paste the diff or test output — the notes file is the
+handoff.
+```
+
+## Fixup subagent prompt template
+
+Used in step 5 when review requests changes:
+
+```
+You are applying review fixes for step <N> of an approved plan.
+
+Plan: .sweatshop/plans/<plan-name>/plan.md
+Step notes: .sweatshop/plans/<plan-name>/step-<N>.md
+Review feedback (verbatim from reviewer):
+<paste reviewer's blocking findings here>
+
+Required sequence:
+1. Read plan.md, step-<N>.md, and the current diff
+   (`git diff HEAD`).
+2. Apply fixes that address every blocking finding. Stay
+   scoped — no drive-bys.
+3. Invoke the `verification` skill.
+4. Append a "Review resolutions" entry to step-<N>.md
+   summarising what changed and why for each finding.
+
+Do NOT commit. Stop after step 4.
+
+Report back in ≤3 lines:
+- Status: ready-for-rereview | blocked
+- One-line summary of fixes applied
+- Pointer to step-<N>.md
+```
 
 ## Per-step notes
 
@@ -187,8 +259,17 @@ comments as if the plan does not exist — describe the change
 on its own terms. No "Step 3:", "addresses GAP-2", "as
 planned in step-4.md", etc.
 
+CRITICAL: The main thread orchestrates; it does NOT implement.
+Per-step research, edits, tests, and verification all happen
+inside the implementation subagent. The main thread reads only
+the returned step-notes file and `git diff --stat` between
+steps. Doing implementation work directly in the main thread is
+the dominant token leak this skill is designed to prevent.
+
 CRITICAL: After auto-compaction (or when starting a fresh
-session mid-plan), read `plan.md` and all prior `step-*.md`
-notes before continuing. Within a single uncompacted session
-do NOT re-read them every step — the conversation already
-has them and re-reading is the dominant token cost.
+session mid-plan), the main thread re-establishes orientation
+by listing existing `step-*.md` files to find the next pending
+step number. Do NOT re-read `plan.md` or prior step notes from
+the main thread — the implementation subagent reads them fresh
+each invocation, which is the contract that makes compaction
+recovery cheap.
