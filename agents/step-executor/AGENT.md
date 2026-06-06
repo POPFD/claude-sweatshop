@@ -273,7 +273,6 @@ STEP <N>: <done | blocked>
 range: <base-sha>..<head-sha>
 chunks: <K>
 changed: <comma-separated file list>
-review-needed: <yes | no — reason>
 summary: <one line: what the step delivered>
 blocker: <none | what stopped you and what you tried>
 ```
@@ -283,12 +282,12 @@ mode the notes ride on the final one; they are not a separate
 chunk). `changed` lists the source files the step touched; in
 finalize mode it also includes `plan.md` and `step-<N>.md`.
 
-Set `review-needed: yes` for: new logic, API/contract changes,
-security-sensitive code, anything the plan flags high-risk.
-Set `review-needed: no` (with a brief reason) for: pure
-docs/comment changes, test-only additions following existing
-patterns, mechanical renames/formatting/moves, or config/tooling
-edits with no runtime effect. When in doubt, say `yes`.
+Review is NOT a field here. Every commit in the range was already
+reviewed inside your context (see "Per-commit review") and any
+requested change folded in before you returned, so there is no
+review verdict, lint/build/test output, or clippy result for the
+orchestrator to act on. Report only what landed — never surface
+internal review or verification status to the orchestrator.
 
 ## Rules
 

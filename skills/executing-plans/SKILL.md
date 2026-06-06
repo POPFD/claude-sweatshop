@@ -78,7 +78,6 @@ For each step `<N>` in order:
    range: <base-sha>..<head-sha>
    chunks: <K>
    changed: <files>
-   review-needed: <yes | no — reason>
    summary: <one line>
    blocker: <none | description>
    ```
