@@ -72,7 +72,11 @@ dimensions:
 ### When reviewing an implementation step
 Review the cumulative diff for the commit range the caller
 provides (a step lands as several small commits, so review the
-whole `<base>..<head>` range, not just the latest commit):
+whole `<base>..<head>` range, not just the latest commit). The
+range may also be a single commit (`HEAD~1..HEAD`) when the
+caller is reviewing one chunk as it lands, often with a one- or
+two-line justification of why that commit exists — judge the
+commit against that justification and the step's criteria:
 - Does it match the step's acceptance criteria?
 - Does it introduce technical debt or design issues?
 - Is the test coverage adequate?

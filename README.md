@@ -105,13 +105,13 @@ handoff between subagents and survive context compaction.
 
 ```mermaid
 flowchart TD
-    Start(["Next step"]) --> Impl["step-executor subagent<br/>• load plan + prior notes<br/>• failing tests<br/>• implement in 2–5 chunks<br/>• /verification (once)<br/>• flip plan boxes + write step-N.md<br/>• commit each chunk"]
+    Start(["Next step"]) --> Impl["step-executor subagent<br/>• load plan + prior notes<br/>• failing tests<br/>• implement in 2–5 chunks<br/>• /verification (once)<br/>• flip plan boxes + write step-N.md<br/>• commit each chunk → review it → amend if needed"]
     Impl --> Sum["Orchestrator reads<br/>executor summary (commit range, ≤8 lines)"]
     Sum --> Risk{"Risk-gated?"}
     Risk -->|trivial<br/>docs / rename / config| Next
-    Risk -->|non-trivial| Review["Reviewer subagent<br/>(code-only or code+domain)<br/>over the commit range"]
+    Risk -->|non-trivial| Review["Reviewer subagent<br/>(code-only or code+domain)<br/>holistic, over the whole range"]
     Review -->|approved| Next{"More steps?"}
-    Review -->|changes requested| Fix["step-executor — fix mode<br/>• apply fixes as new commits<br/>• re-verify<br/>• update step-N.md"]
+    Review -->|changes requested| Fix["step-executor — fix mode<br/>• fold fixes into existing commits (amend)<br/>• re-verify<br/>• update step-N.md"]
     Fix --> Review
     Next -->|yes| Start
     Next -->|no| Done(["Final verification"])
@@ -178,11 +178,17 @@ exploration pass. The mode is picked per-invocation:
   driven by the `focus_areas` configured during onboarding
   (e.g., crypto/DeFi, frontend, ML, distributed systems).
 
-Trivial steps (pure docs, mechanical renames, config-only
-edits with no runtime effect) skip review entirely. If any
-verdict requests changes, the `step-executor` is re-dispatched
-in **fix mode** — it applies the fixes as new commits and
-re-runs verification before re-review — up to 3 iterations
+Review happens at two altitudes. The `step-executor` reviews
+**each commit as it lands**, folding any requested fix into that
+same commit with `git commit --amend` before moving on. Then the
+orchestrator runs **one holistic review over the whole step
+range** as a cross-commit backstop. Trivial steps (pure docs,
+mechanical renames, config-only edits with no runtime effect)
+skip the holistic pass entirely. If that verdict requests
+changes, the `step-executor` is re-dispatched in **fix mode** —
+it folds the fixes into the existing commits (amend, or
+fixup+autosquash for an earlier commit), never as new commits,
+and re-runs verification before re-review — up to 3 iterations
 before escalating to the user.
 
 ### 5. Execution (orchestrator + subagents, TDD per step)
@@ -199,20 +205,26 @@ time, strictly in plan order. The main thread is an
    `/verification` (build + test + lint) once over the end
    state, flips the plan's `- [ ]` boxes, writes the
    step-notes file, and lands the work as a series of small
-   commits. Earlier chunks are code-only; the final chunk
-   bundles the updated `plan.md` and the step-notes file so
-   the step lands atomically as a sequence.
+   commits. It reviews **each commit as it lands** — dispatching
+   the `reviewer` itself and folding any fix into that commit
+   with `git commit --amend` — so every commit is reviewed in
+   isolation before the next one starts. Earlier chunks are
+   code-only; the final chunk bundles the updated `plan.md` and
+   the step-notes file so the step lands atomically as a
+   sequence.
 2. **Orchestrator reads only the executor's summary** — the
    commit range and a one-line result. Diffs and test output
    stay out of the main thread.
-3. **Risk-gated review** — the orchestrator skips review for
-   trivial steps; otherwise dispatches the `reviewer` agent
-   (with the mode chosen from `domain.paths`) over the step's
-   committed range.
+3. **Risk-gated holistic review** — the per-commit reviews are
+   done; this is the cross-commit backstop. The orchestrator
+   skips it for trivial steps; otherwise dispatches the
+   `reviewer` agent (with the mode chosen from `domain.paths`)
+   over the step's whole committed range.
 4. **Fix mode** — on blocking feedback the `step-executor` is
-   re-dispatched, applies the fixes as additional commits,
-   re-verifies, and updates the step-notes "Review
-   resolutions" section. Then re-review. Max 3 cycles.
+   re-dispatched and folds the fixes into the existing commits
+   (amend, or fixup+autosquash for an earlier commit) rather
+   than adding new ones, re-verifies, and updates the step-notes
+   "Review resolutions" section. Then re-review. Max 3 cycles.
 
 Step notes are the durable handoff: they survive context
 compaction, so a fresh session mid-plan can re-orient just

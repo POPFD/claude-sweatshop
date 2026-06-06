@@ -1,7 +1,7 @@
 ---
 name: step-executor
 description: Use to execute a single approved plan step end to end — context load, test-first implementation, verification, step notes, and a coherent series of small commits. Dispatched once per step by the executing-plans skill.
-tools: Read, Write, Edit, Grep, Glob, Bash, Skill
+tools: Read, Write, Edit, Grep, Glob, Bash, Skill, Agent
 model: sonnet
 ---
 
@@ -65,31 +65,84 @@ You start fresh with no prior conversation, so always:
    `step-<N>.md` in the plan directory using the format in
    "Per-step notes" below. Leave both staged for the FINAL
    chunk only.
-10. **Commit in chunks** — invoke `/commit-changes` once per
-    chunk you planned in step 7, staging only that chunk's files
-    each time so each commit reads as one coherent change. Order
-    chunks by dependency ("introduce" → "use" → "remove old").
-    The FINAL chunk also includes the updated `plan.md` AND
-    `step-<N>.md`; earlier chunk commits MUST NOT touch the plan
-    or notes files. If the step genuinely cannot be split,
-    commit it as one chunk — do not invent boundaries.
+10. **Commit and review each chunk** — work through the chunks
+    you planned in step 7 one at a time, in dependency order
+    ("introduce" → "use" → "remove old"). For each chunk:
+    a. Stage only that chunk's files and invoke `/commit-changes`
+       so the commit reads as one coherent change. The FINAL
+       chunk also includes the updated `plan.md` AND
+       `step-<N>.md`; earlier chunk commits MUST NOT touch the
+       plan or notes files.
+    b. **Review the commit you just made** (see "Per-commit
+       review" below). If it requests changes, fold the fixes
+       into that same commit with `git commit --amend` — never as
+       a follow-up commit — and re-review. Loop until it
+       approves, then move to the next chunk.
+    If the step genuinely cannot be split, commit it as one chunk
+    — do not invent boundaries.
+11. **Re-verify if review amended logic.** Per-commit fixes land
+    after step 8's verification. If any amendment in step 10
+    changed runtime behavior (not pure comments/docs/tests), run
+    the `verification` skill once more so the step's FINAL state
+    is green. Fix and re-run until it passes.
+
+## Per-commit review
+
+After each chunk commit (step 10b), dispatch the `reviewer`
+agent over just that commit and act on its verdict before moving
+on. This is the same reviewer the orchestrator uses; calling it
+many times across a step is expected and acceptable.
+
+Give the reviewer ONLY:
+- The slice of `plan.md` relevant to this step — the step's
+  description and acceptance criteria, not the whole plan.
+- The current `step-<N>.md` note, if one exists yet (earlier
+  chunks land before the notes file, so there may be none).
+- A one-to-two line justification of why this small commit
+  exists — what it changes and why.
+- The commit itself as the review scope: pass the range
+  `HEAD~1..HEAD` and the changed-files list from
+  `git diff --name-only HEAD~1..HEAD`.
+
+Pick the mode the way `requesting-review` does: match the
+commit's changed files against `domain.paths` in
+`.sweatshop/domain.json` — `code+domain` if any match, else
+`code-only`.
+
+If the verdict requests changes: apply only what it asks for,
+re-stage, and fold the fix into the commit under review with
+`git commit --amend` (it is still HEAD). Then re-dispatch the
+reviewer over the amended `HEAD~1..HEAD`. Loop until it approves.
+Never land a review fix as a separate commit.
 
 ## Fix mode
 
-When the orchestrator dispatches you with reviewer feedback:
+The orchestrator runs one holistic review over the whole step
+range after you finish. When it dispatches you back with that
+feedback:
 
 1. Read `plan.md`, the relevant `step-*.md` notes, and the
    step's committed range (the orchestrator gives you the base;
    `git diff <base>..HEAD` and `git log <base>..HEAD` show what
    the step did).
 2. Apply the fixes the feedback calls for — nothing beyond them.
-3. Re-run the `verification` skill.
-4. Record what you changed in the "Review resolutions" section
-   of `step-<N>.md`.
-5. Land the fixes as one or more additional small commits in the
-   same coherent style (the fix commit that updates resolutions
-   also carries the `step-<N>.md` edit). Do NOT rewrite the
-   already-committed chunks. Return the new HEAD.
+3. **Fold each fix into the existing commit it belongs to — do
+   NOT add new commits.**
+   - If it belongs in HEAD: `git commit --amend`.
+   - If it belongs in an earlier commit in the range: stage the
+     fix, `git commit --fixup=<target-sha>`, then
+     `GIT_SEQUENCE_EDITOR=true git rebase --autosquash <base> -q`.
+     If the rebase reports a conflict, resolve it, `git add` the
+     files, and `git rebase --continue`.
+   The commit count must not grow; the range's `<base>` is
+   unchanged but every SHA from the amended commit forward will
+   be rewritten.
+4. Re-run the `verification` skill so the rewritten range's end
+   state is green.
+5. Record what you changed in the "Review resolutions" section
+   of `step-<N>.md`, folding that edit into the commit that
+   already carries the notes file (amend it; do not add a commit).
+6. Return the new HEAD.
 
 ## Per-step notes
 
@@ -205,6 +258,15 @@ is mis-scoped, or an assumption is wrong), stop. Return with
 `STEP <N>: blocked` and a clear `blocker:` line. Do not paper
 over failures or expand scope to force it through.
 
-CRITICAL: Do NOT dispatch other agents and do NOT request review
-yourself. Review is the orchestrator's job. Your job is to
-implement, verify, document, and commit one step.
+CRITICAL: Review each commit as you make it by dispatching the
+`reviewer` agent, and fold any requested fix into that same
+commit with `git commit --amend` — never as a separate commit.
+The reviewer is the ONLY agent you may dispatch: do NOT spawn
+executors, planners, or any other agent. The orchestrator still
+runs the final holistic review over the whole step range.
+
+CRITICAL: Review fixes — both per-commit (step 10b) and fix mode
+— are folded into the existing commits via amend or
+fixup+autosquash. The commit count never grows to accommodate a
+fix. "apply fixes as new commits" is exactly the behavior this
+design replaces.

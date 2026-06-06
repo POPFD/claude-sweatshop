@@ -49,7 +49,10 @@ For each step `<N>` in order:
    writes failing tests, implements, verifies once, updates the
    plan and notes, and lands the work as a coherent series of
    small commits (2–5 chunks; final chunk carries `plan.md` and
-   `step-<N>.md`). It returns:
+   `step-<N>.md`). It reviews each commit as it makes it
+   (dispatching the `reviewer` itself and amending in place), so
+   the range you receive is already per-commit-reviewed. It
+   returns:
 
    ```
    STEP <N>: <done | blocked>
@@ -65,21 +68,25 @@ For each step `<N>` in order:
    `blocker:` line to the user and wait. Do not retry blindly or
    hand the same step to another executor.
 
-3. **Review (risk-gated).** If `review-needed: yes`, invoke the
-   `requesting-review` skill against the step's commit **range**
-   (`<base>..<head>` from the summary), passing the `changed`
-   files and the step's acceptance criteria. A step is several
-   commits, so review the whole range, not just `HEAD`. Skip
-   review entirely when the executor returned
-   `review-needed: no`.
+3. **Final holistic review (risk-gated).** The executor already
+   reviewed each commit in isolation; this pass is the
+   cross-commit backstop — does the step hang together as a
+   whole? If `review-needed: yes`, invoke the `requesting-review`
+   skill against the step's commit **range** (`<base>..<head>`
+   from the summary), passing the `changed` files and the step's
+   acceptance criteria. A step is several commits, so review the
+   whole range, not just `HEAD`. Skip review entirely when the
+   executor returned `review-needed: no`.
 
 4. **If review requests changes** — re-dispatch the
    `step-executor` in **fix mode**: pass the plan directory, the
    step number, the step's base SHA, and the reviewer's feedback
-   verbatim. It lands the fixes as additional small commits and
-   returns the new head. Then re-invoke `requesting-review` over
-   the updated range. Max 3 fix/review iterations before
-   escalating to the user.
+   verbatim. It folds the fixes into the existing commits (amend
+   / fixup+autosquash), never as new commits, so the commit count
+   is unchanged but SHAs from the amended commit forward are
+   rewritten — use the new head it returns. Then re-invoke
+   `requesting-review` over the updated range. Max 3 fix/review
+   iterations before escalating to the user.
 
 5. **Report progress** — one line: which step finished and
    what's next. Do NOT prompt the user about compaction; step
