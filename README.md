@@ -105,15 +105,14 @@ handoff between subagents and survive context compaction.
 
 ```mermaid
 flowchart TD
-    Start(["Next step"]) --> Impl["Implementation subagent<br/>• research<br/>• failing tests<br/>• implement in chunks<br/>• /verification<br/>• flip plan boxes<br/>• write step-N.md"]
-    Impl --> Read["Orchestrator reads<br/>step-N.md + git diff --stat"]
-    Read --> Risk{"Risk-gated?"}
-    Risk -->|trivial<br/>docs / rename / config| Commit
-    Risk -->|non-trivial| Review["Reviewer subagent<br/>(code-only or code+domain)"]
-    Review -->|approved| Commit["Orchestrator commits chunks<br/>• chunk 1 (code only)<br/>• chunk 2 (code only)<br/>• …<br/>• final chunk<br/>(code + plan + step-N.md)"]
-    Review -->|changes requested| Fix["Fixup subagent<br/>• apply fixes<br/>• re-verify<br/>• update step-N.md"]
+    Start(["Next step"]) --> Impl["step-executor subagent<br/>• load plan + prior notes<br/>• failing tests<br/>• implement in 2–5 chunks<br/>• /verification (once)<br/>• flip plan boxes + write step-N.md<br/>• commit each chunk"]
+    Impl --> Sum["Orchestrator reads<br/>executor summary (commit range, ≤8 lines)"]
+    Sum --> Risk{"Risk-gated?"}
+    Risk -->|trivial<br/>docs / rename / config| Next
+    Risk -->|non-trivial| Review["Reviewer subagent<br/>(code-only or code+domain)<br/>over the commit range"]
+    Review -->|approved| Next{"More steps?"}
+    Review -->|changes requested| Fix["step-executor — fix mode<br/>• apply fixes as new commits<br/>• re-verify<br/>• update step-N.md"]
     Fix --> Review
-    Commit --> Next{"More steps?"}
     Next -->|yes| Start
     Next -->|no| Done(["Final verification"])
 
@@ -122,13 +121,14 @@ flowchart TD
     style Review fill:#6b46c1,color:#fff
     style Fix fill:#2b6cb0,color:#fff
     style Risk fill:#d69e2e,color:#fff
-    style Commit fill:#38a169,color:#fff
     style Done fill:#2f855a,color:#fff
 ```
 
-Subagents (blue/purple) run in isolated contexts and report a
-≤3-line summary back to the orchestrator — diffs and test
-output never enter the main thread.
+The `step-executor` subagent (blue) and reviewer (purple) run in
+isolated contexts. The executor lands the step's commits itself
+and returns only a compact summary (the commit range and a
+one-line result); the reviewer reads the committed range in its
+own context. Diffs and test output never enter the main thread.
 
 ### 1. Requirements analysis
 
@@ -155,8 +155,10 @@ Work is broken into small, incremental, decoupled steps —
 each landing during execution as a coherent series of small,
 reviewable commits. Every step includes a description,
 rationale, acceptance criteria (as checkboxes), and a list of
-files likely involved. Plans are saved to `.sweatshop/plans/`
-and committed before execution begins.
+files likely involved. Each plan gets its own directory —
+`.sweatshop/plans/<plan-name>/plan.md`, with per-step notes
+(`step-<N>.md`) landing alongside it during execution — and is
+reviewed, approved, and committed before execution begins.
 
 ### 4. Review (plans and code)
 
@@ -178,9 +180,10 @@ exploration pass. The mode is picked per-invocation:
 
 Trivial steps (pure docs, mechanical renames, config-only
 edits with no runtime effect) skip review entirely. If any
-verdict requests changes, a **fixup subagent** applies the
-fixes and re-runs verification before re-review — up to 3
-iterations before escalating to the user.
+verdict requests changes, the `step-executor` is re-dispatched
+in **fix mode** — it applies the fixes as new commits and
+re-runs verification before re-review — up to 3 iterations
+before escalating to the user.
 
 ### 5. Execution (orchestrator + subagents, TDD per step)
 
@@ -188,32 +191,33 @@ The `/executing-plans` skill walks the plan one step at a
 time, strictly in plan order. The main thread is an
 **orchestrator** — it never implements directly. Per step:
 
-1. **Implementation subagent** runs the full TDD loop in its
-   own context: optional `/research`, failing tests, minimum
-   implementation split into 2–5 coherent chunks (one idea
-   per chunk), `/verification` (build + test + lint) over the
-   end-state, flips the plan's `- [ ]` boxes, and writes the
-   step-notes file.
-2. **Orchestrator reads only step notes** plus
-   `git diff --stat` — diffs and test output stay out of the
-   main thread.
+1. **`step-executor` subagent** runs the full TDD loop in its
+   own context: loads `plan.md` and the prior step's notes
+   (walking further back only when a note points there),
+   writes failing tests, implements the minimum code split
+   into 2–5 coherent chunks (one idea per chunk), runs
+   `/verification` (build + test + lint) once over the end
+   state, flips the plan's `- [ ]` boxes, writes the
+   step-notes file, and lands the work as a series of small
+   commits. Earlier chunks are code-only; the final chunk
+   bundles the updated `plan.md` and the step-notes file so
+   the step lands atomically as a sequence.
+2. **Orchestrator reads only the executor's summary** — the
+   commit range and a one-line result. Diffs and test output
+   stay out of the main thread.
 3. **Risk-gated review** — the orchestrator skips review for
    trivial steps; otherwise dispatches the `reviewer` agent
-   (with the mode chosen from `domain.paths`).
-4. **Fixup subagent** applies any blocking review feedback
-   and updates the step-notes "Review resolutions" section.
-   Then re-review. Max 3 cycles.
-5. **Chunked commits** — orchestrator invokes
-   `/commit-changes` once per chunk so each commit reads as
-   a single coherent change a human can skim. Earlier chunks
-   are code-only; the final chunk of the step bundles the
-   updated `plan.md` and the step-notes file alongside its
-   code so the step still lands atomically.
+   (with the mode chosen from `domain.paths`) over the step's
+   committed range.
+4. **Fix mode** — on blocking feedback the `step-executor` is
+   re-dispatched, applies the fixes as additional commits,
+   re-verifies, and updates the step-notes "Review
+   resolutions" section. Then re-review. Max 3 cycles.
 
 Step notes are the durable handoff: they survive context
 compaction, so a fresh session mid-plan can re-orient just
-by listing `step-*.md` files. If a step fails repeatedly and
-cannot be resolved, execution stops and the issue is
+by listing `step-*.md` files. If a step is blocked or fails
+review repeatedly, execution stops and the issue is
 surfaced — no further steps run until the plan is adjusted
 and re-approved.
 
@@ -230,6 +234,7 @@ uncommitted changes remain.
 |-------|------|
 | `researcher` | Deep-dives into the codebase and external sources to build task context |
 | `reviewer` | Principal-engineer code review plus per-project domain review in a single pass |
+| `step-executor` | Executes one plan step end to end (TDD, verify, notes, chunked commits) in an isolated context |
 
 ## Skills
 

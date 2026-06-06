@@ -70,7 +70,9 @@ dimensions:
 - Are there better approaches the plan missed?
 
 ### When reviewing an implementation step
-Review the diff from the most recent commit:
+Review the cumulative diff for the commit range the caller
+provides (a step lands as several small commits, so review the
+whole `<base>..<head>` range, not just the latest commit):
 - Does it match the step's acceptance criteria?
 - Does it introduce technical debt or design issues?
 - Is the test coverage adequate?

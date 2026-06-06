@@ -17,13 +17,17 @@ so we only pay for one exploration of the diff.
 2. **Prepare context** for the reviewer:
    - **Plan review:** the plan content, research findings,
      and the spec or task description.
-   - **Code review:** the diff from the most recent commit,
-     the step's acceptance criteria, and the plan context.
-     Also pass the explicit changed-files list from
-     `git diff --name-only HEAD~1` so the reviewer reads
+   - **Code review:** the diff for the step's commit **range**,
+     the step's acceptance criteria, and the plan context. A
+     step lands as several small commits, so the caller gives
+     you a `<base>..<head>` range — review the whole range, not
+     just `HEAD`. Also pass the explicit changed-files list from
+     `git diff --name-only <base>..<head>` so the reviewer reads
      only those files instead of grepping the repo. Pin its
      scope: "review only these files; do not explore beyond
-     them unless a finding requires it."
+     them unless a finding requires it." (For a plan review or a
+     single-commit change, a plain `HEAD` / `HEAD~1..HEAD` works
+     the same way.)
 3. **Pick the mode.** The mode tells the reviewer which
    sections to produce. Skipping the domain section when the
    change is outside its lane avoids burning tokens for no
