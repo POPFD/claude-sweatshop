@@ -7,13 +7,15 @@ description: Use when you have an approved plan to execute step by step with TDD
 
 Drive an approved plan to completion one step at a time. You are
 the **orchestrator**: you do not implement steps yourself. Each
-step is handed to a fresh `step-executor` subagent that does the
-reading, test-first implementation, verification, note-writing,
-and commits in its own throwaway context — then returns a
-compact summary. You hold only the plan, those summaries, and
-review verdicts. This is what keeps long plans from ballooning
-the main context: per-step file reads, test output, and diffs
-never land here.
+step is handed to a fresh `step-executor` coordinator that loads
+context, plans the step's commits one chunk at a time, and
+dispatches a `step-implementer` subagent per chunk (each writes
+tests, implements, verifies that one commit, and commits it),
+reviewing every commit as it lands — then returns a compact
+summary. You hold only the plan, those summaries, and review
+verdicts. This is what keeps long plans from ballooning the main
+context: per-step file reads, test output, and diffs never land
+here.
 
 ## Plan directory layout
 
@@ -45,16 +47,31 @@ context.
 For each step `<N>` in order:
 
 1. **Dispatch the `step-executor` agent.** Give it the plan
-   directory path and the step number. Inside its own context it
-   writes failing tests, implements, verifies once, updates the
-   plan and notes, and lands the work as a coherent series of
-   small commits (2–5 chunks; final chunk carries `plan.md` and
-   `step-<N>.md`). It reviews each commit as it makes it
-   (dispatching the `reviewer` itself and amending in place), so
-   the range you receive is already per-commit-reviewed. It
-   returns:
+   directory path and the step number. It is a **coordinator**:
+   it loads context, then plans the step's commits **one chunk at
+   a time**. For each chunk it dispatches a `step-implementer`
+   subagent that writes the tests + code for that single commit
+   and verifies it (build/test/lint) green before committing; the
+   coordinator then dispatches the `reviewer` over that one
+   commit and, if changes are needed, re-dispatches the
+   implementer in **fix mode** to amend it in place. So the range
+   you receive is already per-commit-verified and
+   per-commit-reviewed (2–5 chunks; the final code commit carries
+   `plan.md` and `step-<N>.md`). The coordinator itself writes no
+   source or test code.
+
+   **Always end the dispatch prompt with the literal block
+   below** (substituting the real step number for `<N>`). This is
+   not optional framing — executors otherwise drift and return a
+   truncated line like "Build succeeded." instead of a parseable
+   summary, leaving you unable to gate review or detect that the
+   step never landed. Paste it verbatim as the last thing the
+   executor reads:
 
    ```
+   Return the standard STEP summary block as your final message,
+   and nothing else:
+
    STEP <N>: <done | blocked>
    range: <base-sha>..<head-sha>
    chunks: <K>
@@ -63,6 +80,13 @@ For each step `<N>` in order:
    summary: <one line>
    blocker: <none | description>
    ```
+
+   It returns exactly that block. If a dispatched executor
+   returns anything that is NOT this block — a prose status, a
+   bare "Build succeeded.", an empty message — treat the step as
+   **not verified**: do not advance. Check the working tree
+   (`git status`, `git log`) and re-dispatch the executor to
+   finish properly, again ending the prompt with the block above.
 
 2. **If the executor reports `blocked`** — stop. Surface the
    `blocker:` line to the user and wait. Do not retry blindly or
@@ -120,8 +144,9 @@ no skipping, no parallel execution.
 
 CRITICAL: You orchestrate; you do not implement. Every step's
 code, tests, verification, notes, and commits are produced by
-the `step-executor` subagent — never inline in this loop.
-Inlining defeats the entire token-isolation design.
+the `step-executor` coordinator and the `step-implementer`
+subagents it dispatches — never inline in this loop. Inlining
+defeats the entire token-isolation design.
 
 CRITICAL: Each step must pass review (when review-needed) before
 the next step is dispatched. Review the full commit range the
