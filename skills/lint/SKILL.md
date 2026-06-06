@@ -96,7 +96,11 @@ do NOT guess or run arbitrary commands.
 
 CRITICAL: Always use the output-handling wrapper unless the
 user requested verbose mode. Do not invoke the lint command
-raw — that defeats the token-reduction the wrapper provides.
+raw — that defeats the token-reduction the wrapper provides,
+and a routing hook blocks bare lint commands. The hook
+recognizes a legitimate run by the `mktemp` wrapper this skill
+emits, so the wrapper is load-bearing: drop it and the command
+is denied.
 
 CRITICAL: When the wrapper surfaces violations, report them
 verbatim so the user can decide whether to fix or ignore.

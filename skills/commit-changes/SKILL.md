@@ -21,3 +21,7 @@ Rules:
 - If the repo isn't cwd, use `git -C <path> ...` as separate
   Bash calls. Never chain `cd <path> && git ...` — it triggers
   bare-repo permission prompts.
+- `--signoff` is load-bearing, not just policy: a routing hook
+  blocks any `git commit` that creates a commit without it, so
+  that direct commits are forced through this skill. (Mechanical
+  history edits — `--amend`, `--fixup`, `--squash` — are exempt.)
