@@ -268,6 +268,24 @@ Supported linters: make lint, cargo clippy, npm run lint,
 golangci-lint, dotnet format, gradle check, mvn checkstyle,
 ruff, flake8, pylint.
 
+## Enforced skill routing
+
+A `PreToolUse` hook (`hooks/hooks.json` →
+`hooks/scripts/enforce-skill-routing.py`) keeps the main agent
+and every subagent on the canonical path: it blocks raw
+`git commit` and bare build/test/lint runner commands and
+redirects them to `/commit-changes`, `/build`, `/test`, and
+`/lint`. The skills' own invocations pass through because the
+hook recognizes their canonical shape — the `mktemp` output
+wrapper for build/test/lint, and `--signoff` for commits —
+while mechanical history edits (`--amend`, `--fixup`,
+`--squash`) stay exempt. The hook fails open: any parse error
+exits cleanly so it can never wedge an agent.
+
+Known limitation: a verbose run (`/build --verbose`, `-v`)
+skips the wrapper, so it is blocked too — re-run without
+`--verbose`.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
