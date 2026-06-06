@@ -106,20 +106,18 @@ handoff between subagents and survive context compaction.
 ```mermaid
 flowchart TD
     Start(["Next step"]) --> Coord["step-executor (coordinator)<br/>• load plan + prior notes<br/>• plan next chunk (one at a time)"]
-    Coord --> Impl["step-implementer subagent<br/>• tests-first for this chunk<br/>• implement minimum code<br/>• /verification (build+test+lint) green<br/>• commit ONE chunk"]
+    Coord --> Impl["step-implementer subagent<br/>• tests-first for this chunk<br/>• implement minimum code<br/>• /verification (build+test+lint) green<br/>• commit ONE chunk (code only)"]
     Impl --> CRev["Reviewer subagent<br/>over that single commit"]
     CRev -->|changes requested| CFix["step-implementer — fix mode<br/>• amend the commit<br/>• re-verify"]
     CFix --> CRev
     CRev -->|approved| More{"More chunks?"}
     More -->|yes| Coord
-    More -->|no| Notes["Coordinator finalizes<br/>• flip plan boxes + write step-N.md<br/>• amend into final commit<br/>• return STEP summary block"]
-    Notes --> Sum["Orchestrator reads<br/>STEP summary block (commit range, ≤8 lines)"]
-    Sum --> Risk{"Risk-gated?"}
-    Risk -->|trivial<br/>docs / rename / config| Next
-    Risk -->|non-trivial| Review["Reviewer subagent<br/>holistic, over the whole range"]
-    Review -->|approved| Next{"More steps?"}
-    Review -->|changes requested| Fix["step-executor — fix mode<br/>• drive implementer to fold fixes (amend/fixup)<br/>• re-verify<br/>• update step-N.md"]
-    Fix --> Review
+    More -->|no| Sum["Orchestrator reads<br/>STEP summary block (commit range, ≤8 lines)"]
+    Sum --> Gate{"Completeness gate<br/>commit messages vs<br/>acceptance criteria<br/>(NEVER reads code)"}
+    Gate -->|gaps| Cont["step-executor — continue mode<br/>• add missing work as NEW commits<br/>• no notes yet"]
+    Cont --> Sum
+    Gate -->|complete| Final["step-executor — finalize mode<br/>• flip plan boxes + write step-N.md<br/>• amend into the FINAL commit"]
+    Final --> Next{"More steps?"}
     Next -->|yes| Start
     Next -->|no| Done(["Final verification"])
 
@@ -127,11 +125,10 @@ flowchart TD
     style Coord fill:#2b6cb0,color:#fff
     style Impl fill:#2c7a7b,color:#fff
     style CFix fill:#2c7a7b,color:#fff
-    style Notes fill:#2b6cb0,color:#fff
+    style Cont fill:#2b6cb0,color:#fff
+    style Final fill:#2b6cb0,color:#fff
     style CRev fill:#6b46c1,color:#fff
-    style Review fill:#6b46c1,color:#fff
-    style Fix fill:#2b6cb0,color:#fff
-    style Risk fill:#d69e2e,color:#fff
+    style Gate fill:#d69e2e,color:#fff
     style Done fill:#2f855a,color:#fff
 ```
 
@@ -140,8 +137,13 @@ one chunk at a time and dispatches a `step-implementer` (teal)
 for each one; the `reviewer` (purple) reads each committed chunk
 in its own context. All three run in isolated contexts — diffs
 and test output never enter the main thread, which sees only the
-coordinator's compact summary (the commit range and a one-line
-result).
+coordinator's compact summary. Code quality is reviewed
+per-commit as the chunks land; the orchestrator's final gate
+(amber) is a **completeness check** that reads only the commit
+messages against the step's acceptance criteria — it never reads
+code. Gaps send the coordinator back in continue mode to add the
+missing commits; once complete, finalize amends the plan boxes
+and `step-<N>.md` into the step's final commit.
 
 ### 1. Requirements analysis
 
@@ -191,20 +193,16 @@ exploration pass. The mode is picked per-invocation:
   driven by the `focus_areas` configured during onboarding
   (e.g., crypto/DeFi, frontend, ML, distributed systems).
 
-Review happens at two altitudes. The `step-executor`
-coordinator reviews **each commit as it lands** — dispatching
-the `reviewer` over that single commit and, on changes, sending
-the `step-implementer` back in fix mode to fold the fix into the
-same commit with `git commit --amend` before moving on. Then the
-orchestrator runs **one holistic review over the whole step
-range** as a cross-commit backstop. Trivial steps (pure docs,
-mechanical renames, config-only edits with no runtime effect)
-skip the holistic pass entirely. If that verdict requests
-changes, the `step-executor` is re-dispatched in **fix mode** —
-it drives the implementer to fold the fixes into the existing
-commits (amend, or fixup+autosquash for an earlier commit),
-never as new commits, and re-runs verification before re-review —
-up to 3 iterations before escalating to the user.
+Code review happens **per commit**: the `step-executor`
+coordinator dispatches the `reviewer` over each chunk as it lands
+and, on changes, sends the `step-implementer` back in fix mode to
+fold the fix into that same commit with `git commit --amend`
+before moving on. There is no separate holistic code review at
+the end — the final gate is a **completeness check**, not a code
+review: it reads only the step's commit messages and confirms
+they deliver every acceptance criterion (see Execution below).
+The per-commit code review uses the modes above; the final
+completeness gate never reads code.
 
 ### 5. Execution (orchestrator + subagents, TDD per step)
 
@@ -216,7 +214,7 @@ time, strictly in plan order. The main thread is an
    context but writes no code itself: it loads `plan.md` and the
    prior step's notes (walking further back only when a note
    points there), then plans the step's commits **one chunk at a
-   time** (one idea per chunk, 2–5 chunks). For each chunk it
+   time** (one idea per chunk, 1–5 chunks). For each chunk it
    dispatches a **`step-implementer` subagent** that writes the
    chunk's tests first, implements the minimum code, runs
    `/verification` (build + test + lint) until that single
@@ -224,30 +222,33 @@ time, strictly in plan order. The main thread is an
    coordinator then dispatches the `reviewer` over that one
    commit and, on changes, sends the implementer back in fix
    mode to amend it — so every commit is verified and reviewed in
-   isolation before the next chunk is planned. After the final
-   chunk, the coordinator flips the plan's `- [ ]` boxes, writes
-   the step-notes file, and folds both into the final commit so
-   the step lands atomically.
+   isolation before the next chunk is planned. It commits **only
+   code** at this stage — the plan boxes and step-notes are not
+   written yet.
 2. **Orchestrator reads only the coordinator's STEP summary
    block** — the commit range and a one-line result. Diffs and
    test output stay out of the main thread.
-3. **Risk-gated holistic review** — the per-commit reviews are
-   done; this is the cross-commit backstop. The orchestrator
-   skips it for trivial steps; otherwise dispatches the
-   `reviewer` agent (with the mode chosen from `domain.paths`)
-   over the step's whole committed range.
-4. **Fix mode** — on blocking feedback the `step-executor` is
-   re-dispatched and drives the implementer to fold the fixes
-   into the existing commits (amend, or fixup+autosquash for an
-   earlier commit) rather than adding new ones, re-verifies, and
-   updates the step-notes "Review resolutions" section. Then
-   re-review. Max 3 cycles.
+3. **Completeness gate (commit messages only)** — the orchestrator
+   reads ONLY the commit messages for the step's range and checks
+   them against the step's acceptance criteria. It never reads
+   code (code quality was covered per-commit). If every criterion
+   is delivered, the step passes; otherwise it lists the gaps.
+4. **Continue mode** — if the gate finds gaps, the `step-executor`
+   is re-dispatched to **continue the step**, adding the missing
+   work as new commits (never amending existing ones), then the
+   gate re-runs. Max 3 cycles.
+5. **Finalize mode** — once the gate approves, the `step-executor`
+   is dispatched one last time to flip the plan's `- [ ]` boxes,
+   write the step-notes file, and **amend both into the step's
+   final commit** (the last in the series). This is the only point
+   the plan and notes are committed, so they always ride on the
+   approved final commit.
 
 Step notes are the durable handoff: they survive context
 compaction, so a fresh session mid-plan can re-orient just
 by listing `step-*.md` files. If a step is blocked or fails
-review repeatedly, execution stops and the issue is
-surfaced — no further steps run until the plan is adjusted
+the completeness gate repeatedly, execution stops and the issue
+is surfaced — no further steps run until the plan is adjusted
 and re-approved.
 
 ### 6. Verification

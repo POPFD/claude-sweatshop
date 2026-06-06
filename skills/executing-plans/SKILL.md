@@ -56,9 +56,11 @@ For each step `<N>` in order:
    commit and, if changes are needed, re-dispatches the
    implementer in **fix mode** to amend it in place. So the range
    you receive is already per-commit-verified and
-   per-commit-reviewed (2–5 chunks; the final code commit carries
-   `plan.md` and `step-<N>.md`). The coordinator itself writes no
-   source or test code.
+   per-commit-reviewed (1–5 code commits). At this point it
+   commits only code — the plan boxes and `step-<N>.md` are NOT
+   written yet; they are added later in finalize mode (step 5), so
+   the completeness gate reads pure code commits. The coordinator
+   itself writes no source or test code.
 
    **Always end the dispatch prompt with the literal block
    below** (substituting the real step number for `<N>`). This is
@@ -92,27 +94,47 @@ For each step `<N>` in order:
    `blocker:` line to the user and wait. Do not retry blindly or
    hand the same step to another executor.
 
-3. **Final holistic review (risk-gated).** The executor already
-   reviewed each commit in isolation; this pass is the
-   cross-commit backstop — does the step hang together as a
-   whole? If `review-needed: yes`, invoke the `requesting-review`
-   skill against the step's commit **range** (`<base>..<head>`
-   from the summary), passing the `changed` files and the step's
-   acceptance criteria. A step is several commits, so review the
-   whole range, not just `HEAD`. Skip review entirely when the
-   executor returned `review-needed: no`.
+3. **Final completeness gate (commit messages only).** Code
+   quality was already covered per-commit inside the coordinator;
+   this final pass is NOT a code review. Its only job is to
+   confirm the step's commits, taken together, actually deliver
+   the step's stated goal. **Read ONLY the commit messages** for
+   the step's range — `git log <base>..<head>` subjects and
+   bodies (the `range` from the summary). Do NOT read the diff,
+   the changed files, or any source code. Compare those messages
+   against the step's description and acceptance criteria in
+   `plan.md`:
+   - If every acceptance criterion for the step is accounted for
+     by the commits → the step is complete; proceed.
+   - If one or more criteria are not evidenced by any commit →
+     the step is incomplete. List exactly which criteria/goals
+     are still unmet and hand that list to step 4.
 
-4. **If review requests changes** — re-dispatch the
-   `step-executor` in **fix mode**: pass the plan directory, the
-   step number, the step's base SHA, and the reviewer's feedback
-   verbatim. It folds the fixes into the existing commits (amend
-   / fixup+autosquash), never as new commits, so the commit count
-   is unchanged but SHAs from the amended commit forward are
-   rewritten — use the new head it returns. Then re-invoke
-   `requesting-review` over the updated range. Max 3 fix/review
-   iterations before escalating to the user.
+   This gate never inspects or judges code, and it never amends
+   or rewrites commits — it only decides done-vs-not-done and
+   reports the gaps.
 
-5. **Report progress** — one line: which step finished and
+4. **If the gate finds gaps** — re-dispatch the `step-executor`
+   in **continue mode**: pass the plan directory, the step
+   number, the step's base SHA, and the gap list verbatim. The
+   coordinator **continues the step** — it implements the missing
+   work as additional code commits (it does NOT amend existing
+   commits to satisfy the gate, and it does NOT write notes yet).
+   Use the new range it returns, then re-run the completeness gate
+   (step 3) over it. Max 3 continue/gate iterations before
+   escalating to the user.
+
+5. **Finalize the step (gate approved).** Only once the gate
+   passes, re-dispatch the `step-executor` in **finalize mode**:
+   pass the plan directory, the step number, and the step's base
+   SHA. It flips this step's acceptance boxes in `plan.md`, writes
+   `step-<N>.md`, and **amends both into the step's final commit**
+   (the last in the series) — never an earlier commit, never a new
+   one. This is the only point where the plan and notes are
+   committed, so they always ride on the approved final commit.
+   Use the new head it returns.
+
+6. **Report progress** — one line: which step finished and
    what's next. Do NOT prompt the user about compaction; step
    notes carry state across it on their own.
 
@@ -148,12 +170,14 @@ the `step-executor` coordinator and the `step-implementer`
 subagents it dispatches — never inline in this loop. Inlining
 defeats the entire token-isolation design.
 
-CRITICAL: Each step must pass review (when review-needed) before
-the next step is dispatched. Review the full commit range the
-executor reports, since a step lands as several commits.
+CRITICAL: Each step must pass the final completeness gate before
+the next step is dispatched. The gate reads ONLY the commit
+messages for the step's range and checks them against the step's
+acceptance criteria — it never reads code and never amends
+commits. Gaps go back to the coordinator in continue mode.
 
-CRITICAL: If an executor reports `blocked`, or a step fails
-review 3 times, stop and surface to the user. Do not paper over
+CRITICAL: If an executor reports `blocked`, or a step fails the
+completeness gate 3 times, stop and surface to the user. Do not paper over
 failures to keep the pipeline moving.
 
 CRITICAL: After auto-compaction or when resuming in a fresh
