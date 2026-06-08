@@ -70,10 +70,12 @@ Run common dev tasks with auto-detection of your toolchain:
 
 ## How it works
 
-The plugin coordinates a pipeline of specialized agents and
-skills. The main thread acts as an **orchestrator** — it
-delegates heavyweight work (codebase exploration, edits, test
-runs) to subagents so context stays clean across long plans.
+The plugin coordinates a pipeline of skills. It calls out to
+specialized subagents for the two read-heavy jobs —
+codebase/external **research** and code **review** — so their
+large contexts never enter the main thread. Everything else,
+including the per-step TDD loop (tests, edits, verification,
+commits), runs in the main thread one plan step at a time.
 
 ### Overall pipeline
 
@@ -96,39 +98,45 @@ flowchart TD
     style L fill:#2f855a,color:#fff
 ```
 
-### Per-step execution (orchestrator + subagents)
+### Per-step execution (TDD loop)
 
-For each plan step, the main thread orchestrates while
-specialized subagents do the work. Step notes
-(`.sweatshop/plans/<name>/step-<N>.md`) are the durable
-handoff between subagents and survive context compaction.
+Each plan step runs its full test-driven loop in the main
+thread, calling out to a subagent only for optional research
+and for the review gate. Step notes
+(`.sweatshop/plans/<name>/step-<N>.md`) are the durable handoff
+that survives context compaction.
 
 ```mermaid
 flowchart TD
-    Start(["Next step"]) --> Impl["Implementation subagent<br/>• research<br/>• failing tests<br/>• implement in chunks<br/>• /verification<br/>• flip plan boxes<br/>• write step-N.md"]
-    Impl --> Read["Orchestrator reads<br/>step-N.md + git diff --stat"]
-    Read --> Risk{"Risk-gated?"}
+    Start(["Next step"]) --> Ctx["Load plan + prior step notes<br/>(first step or after compaction)"]
+    Ctx --> Res["Optional /research<br/>(researcher subagent)"]
+    Res --> Tests["Write failing tests"]
+    Tests --> Impl["Implement in 2–5 chunks<br/>(one idea per chunk)"]
+    Impl --> Verify["/verification<br/>(build + test + lint, once)"]
+    Verify --> Notes["Flip plan boxes<br/>+ write step-N.md"]
+    Notes --> Risk{"Risk-gated?"}
     Risk -->|trivial<br/>docs / rename / config| Commit
-    Risk -->|non-trivial| Review["Reviewer subagent<br/>(code-only or code+domain)"]
-    Review -->|approved| Commit["Orchestrator commits chunks<br/>• chunk 1 (code only)<br/>• chunk 2 (code only)<br/>• …<br/>• final chunk<br/>(code + plan + step-N.md)"]
-    Review -->|changes requested| Fix["Fixup subagent<br/>• apply fixes<br/>• re-verify<br/>• update step-N.md"]
+    Risk -->|non-trivial| Review["/requesting-review<br/>(reviewer subagent:<br/>code-only or code+domain)"]
+    Review -->|approved| Commit["Commit each chunk via /commit-changes<br/>• chunk 1 (code only)<br/>• …<br/>• final chunk<br/>(code + plan + step-N.md)"]
+    Review -->|changes requested| Fix["Apply fixes<br/>+ re-verify (max 3 cycles)"]
     Fix --> Review
     Commit --> Next{"More steps?"}
     Next -->|yes| Start
     Next -->|no| Done(["Final verification"])
 
     style Start fill:#4a5568,color:#fff
-    style Impl fill:#2b6cb0,color:#fff
+    style Res fill:#2b6cb0,color:#fff
     style Review fill:#6b46c1,color:#fff
-    style Fix fill:#2b6cb0,color:#fff
     style Risk fill:#d69e2e,color:#fff
     style Commit fill:#38a169,color:#fff
     style Done fill:#2f855a,color:#fff
 ```
 
-Subagents (blue/purple) run in isolated contexts and report a
-≤3-line summary back to the orchestrator — diffs and test
-output never enter the main thread.
+Only research and review (blue/purple) run as subagents in
+isolated contexts; the rest of the loop runs in the main
+thread. Step notes carry forward anything later steps need, so
+a fresh session mid-plan can re-orient just by reading
+`step-*.md`.
 
 ### 1. Requirements analysis
 
@@ -178,37 +186,42 @@ exploration pass. The mode is picked per-invocation:
 
 Trivial steps (pure docs, mechanical renames, config-only
 edits with no runtime effect) skip review entirely. If any
-verdict requests changes, a **fixup subagent** applies the
-fixes and re-runs verification before re-review — up to 3
-iterations before escalating to the user.
+verdict requests changes, the fixes are applied and
+verification re-runs before re-review — up to 3 iterations
+before escalating to the user.
 
-### 5. Execution (orchestrator + subagents, TDD per step)
+### 5. Execution (TDD per step)
 
 The `/executing-plans` skill walks the plan one step at a
-time, strictly in plan order. The main thread is an
-**orchestrator** — it never implements directly. Per step:
+time, strictly in plan order. Each step runs its full
+test-driven loop in the main thread:
 
-1. **Implementation subagent** runs the full TDD loop in its
-   own context: optional `/research`, failing tests, minimum
-   implementation split into 2–5 coherent chunks (one idea
-   per chunk), `/verification` (build + test + lint) over the
-   end-state, flips the plan's `- [ ]` boxes, and writes the
-   step-notes file.
-2. **Orchestrator reads only step notes** plus
-   `git diff --stat` — diffs and test output stay out of the
-   main thread.
-3. **Risk-gated review** — the orchestrator skips review for
-   trivial steps; otherwise dispatches the `reviewer` agent
-   (with the mode chosen from `domain.paths`).
-4. **Fixup subagent** applies any blocking review feedback
-   and updates the step-notes "Review resolutions" section.
-   Then re-review. Max 3 cycles.
-5. **Chunked commits** — orchestrator invokes
-   `/commit-changes` once per chunk so each commit reads as
-   a single coherent change a human can skim. Earlier chunks
-   are code-only; the final chunk of the step bundles the
-   updated `plan.md` and the step-notes file alongside its
-   code so the step still lands atomically.
+1. **Load context only when needed** — re-read `plan.md` and
+   prior `step-*.md` notes on the first step of a session or
+   after auto-compaction; otherwise the conversation already
+   holds them, and re-reading is the dominant token cost.
+2. **Gather context** — optionally invoke `/research` if the
+   step touches unfamiliar code.
+3. **Tests first** — write failing tests for the step's
+   acceptance criteria.
+4. **Implement in chunks** — the minimum code, split into
+   2–5 coherent chunks (one idea per chunk), scoped to this
+   step only.
+5. **Verify** — invoke `/verification` once; it runs build +
+   test + lint over the end-state as a single pass.
+6. **Update plan + notes** — flip this step's `- [ ]` boxes
+   and write the step-notes file.
+7. **Risk-gated review** — skip review for trivial steps
+   (docs, mechanical renames, config-only); otherwise invoke
+   `/requesting-review` (with the mode chosen from
+   `domain.paths`). If review requests changes, apply fixes,
+   re-verify, and re-review — max 3 cycles before escalating.
+8. **Chunked commits** — invoke `/commit-changes` once per
+   chunk so each commit reads as a single coherent change a
+   human can skim. Earlier chunks are code-only; the final
+   chunk of the step bundles the updated `plan.md` and the
+   step-notes file alongside its code so the step still lands
+   atomically.
 
 Step notes are the durable handoff: they survive context
 compaction, so a fresh session mid-plan can re-orient just
