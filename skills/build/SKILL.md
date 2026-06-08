@@ -102,11 +102,7 @@ diagnose, suggest rerunning with `--verbose`.
 
 CRITICAL: Always use the output-handling wrapper unless the
 user requested verbose mode. Do not invoke the build command
-raw — that defeats the token-reduction the wrapper provides,
-and a routing hook blocks bare build commands. The hook
-recognizes a legitimate build by the `mktemp` wrapper this
-skill emits, so the wrapper is load-bearing: drop it and the
-command is denied.
+raw — that defeats the token-reduction the wrapper provides.
 
 If the user provides additional arguments, pass them through
 to the underlying build command (after stripping the

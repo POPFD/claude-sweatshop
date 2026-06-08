@@ -96,11 +96,7 @@ and do NOT guess or run arbitrary commands.
 
 CRITICAL: Always use the output-handling wrapper unless the
 user requested verbose mode. Do not invoke the test command
-raw — that defeats the token-reduction the wrapper provides,
-and a routing hook blocks bare test commands. The hook
-recognizes a legitimate run by the `mktemp` wrapper this skill
-emits, so the wrapper is load-bearing: drop it and the command
-is denied.
+raw — that defeats the token-reduction the wrapper provides.
 
 CRITICAL: When reporting, quote the summary line from the
 wrapper output verbatim (counts of passed/failed/skipped). If

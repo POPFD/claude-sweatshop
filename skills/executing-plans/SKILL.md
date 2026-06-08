@@ -1,186 +1,241 @@
 ---
 name: executing-plans
-description: Use when you have an approved plan to execute step by step with TDD, review gates, and small atomic commits.
+description: Use when you have an approved plan to execute step by step with TDD, review gates, and atomic commits.
 ---
 
 # Executing Plans
 
-Drive an approved plan to completion one step at a time. You are
-the **orchestrator**: you do not implement steps yourself. Each
-step is handed to a fresh `step-executor` coordinator that loads
-context, plans the step's commits one chunk at a time, and
-dispatches a `step-implementer` subagent per chunk (each writes
-tests, implements, verifies that one commit, and commits it),
-reviewing every commit as it lands — then returns a compact
-summary. You hold only the plan, those summaries, and review
-verdicts. This is what keeps long plans from ballooning the main
-context: per-step file reads, test output, and diffs never land
-here.
+Walk through an approved plan one step at a time. Each step
+follows a test-first workflow, passes review, and lands as a
+coherent series of small, human-readable commits.
 
 ## Plan directory layout
+
+Plans live in their own directory:
 
 ```
 .sweatshop/plans/<plan-name>/
   plan.md           # the plan file
-  step-1.md         # step notes (written by the executor)
-  step-2.md
+  step-1.md         # step 1 notes (produced as step 1 lands)
+  step-2.md         # step 2 notes
   ...
 ```
 
 `<plan-name>` is the slug chosen when the plan was written
-(e.g. `2026-04-15-add-auth`). The plan file is always `plan.md`;
-step notes are siblings named `step-<N>.md`.
+(e.g. `2026-04-15-add-auth`). The plan file is always named
+`plan.md` inside that directory; step notes are siblings
+named `step-<N>.md`.
 
 ## Preparation
 
 1. **Locate the plan directory** — find
-   `.sweatshop/plans/<plan-name>/` and read `plan.md` once.
-2. **Confirm step order** — steps run strictly in listed order.
-   No skipping, no reordering, no parallel execution.
-
-You do not need to read the source files or the `step-*.md`
-notes yourself — each executor reads what it needs into its own
-context.
+   `.sweatshop/plans/<plan-name>/` and read `plan.md`.
+2. **Confirm step order** — plans are executed strictly in
+   the order steps are listed. No skipping, no reordering.
 
 ## Process per step
 
-For each step `<N>` in order:
+For each step in the plan, follow this exact sequence:
 
-1. **Dispatch the `step-executor` agent.** Give it the plan
-   directory path and the step number. It is a **coordinator**:
-   it loads context, then plans the step's commits **one chunk at
-   a time**. For each chunk it dispatches a `step-implementer`
-   subagent that writes the tests + code for that single commit
-   and verifies it (build/test/lint) green before committing; the
-   coordinator then dispatches the `reviewer` over that one
-   commit and, if changes are needed, re-dispatches the
-   implementer in **fix mode** to amend it in place. So the range
-   you receive is already per-commit-verified and
-   per-commit-reviewed (1–5 code commits). At this point it
-   commits only code — the plan boxes and `step-<N>.md` are NOT
-   written yet; they are added later in finalize mode (step 5), so
-   the completeness gate reads pure code commits. The coordinator
-   itself writes no source or test code.
+1. **Load prior context — only when needed.** Re-read
+   `plan.md` and every existing `step-*.md` ONLY if one of
+   these is true:
+   - This is the first step you are executing in the current
+     session.
+   - Auto-compaction has fired since the last step (prior
+     conversation no longer visible).
+   - You are unsure whether a fact from an earlier step is
+     still in your context.
 
-   **Always end the dispatch prompt with the literal block
-   below** (substituting the real step number for `<N>`). This is
-   not optional framing — executors otherwise drift and return a
-   truncated line like "Build succeeded." instead of a parseable
-   summary, leaving you unable to gate review or detect that the
-   step never landed. Paste it verbatim as the last thing the
-   executor reads:
+   Otherwise skip this step — re-reading the same files every
+   iteration is the largest token leak in this workflow. The
+   notes are the authoritative source after compaction; before
+   compaction, the conversation already has them.
+2. **Gather additional context** — if this step touches
+   unfamiliar code not covered by prior notes, invoke the
+   `research` skill.
+3. **Write tests first** — tests that verify the step's
+   acceptance criteria. They should fail at this point.
+4. **Implement in chunks** — minimum code to make the tests
+   pass. Stay scoped to this step only. As you work, plan
+   natural commit boundaries: each chunk is one coherent
+   idea a reviewer can read in a single sitting (e.g. "add
+   helper X", "migrate callers to X", "wire X into the
+   endpoint"). Aim for 2–5 chunks per step; one is fine if
+   the step is genuinely small. See "Chunking commits"
+   below for what makes a good boundary.
+5. **Verify** — invoke the `verification` skill once. It
+   runs build, test, and lint as a single pass and is
+   silent on success. Do NOT invoke `/build`, `/test`, and
+   `/lint` separately — that triples the skill-load
+   overhead for no extra signal.
+6. **Update the plan file** — flip this step's
+   acceptance-criteria boxes from `- [ ]` to `- [x]`. Do NOT
+   modify any other step's boxes.
+7. **Write step notes** — save
+   `.sweatshop/plans/<plan-name>/step-<N>.md` using the
+   format in the "Per-step notes" section below. These notes
+   must survive context compaction and carry forward anything
+   later steps will need to know.
+8. **Review (risk-gated)** — invoke the `requesting-review`
+    skill ONLY when the step is non-trivial. Skip review for:
+    - Pure docs/comment changes.
+    - Test-only additions where the test follows existing
+      patterns.
+    - Mechanical renames, formatting, or moves with no logic
+      change.
+    - Config/tooling edits with no runtime effect.
 
-   ```
-   Return the standard STEP summary block as your final message,
-   and nothing else:
+    Always review for: new logic, API/contract changes,
+    security-sensitive code, anything the plan flags as
+    high-risk, and any step where domain `paths` match.
 
-   STEP <N>: <done | blocked>
-   range: <base-sha>..<head-sha>
-   chunks: <K>
-   changed: <files>
-   summary: <one line>
-   blocker: <none | description>
-   ```
+    If review requests changes, apply fixes and re-review (max
+    3 iterations before escalating).
+9. **Commit each chunk** — invoke /commit-changes once per
+    chunk identified during implementation. Stage only the
+    files belonging to that chunk so each commit reads as a
+    single coherent change. The FINAL commit of the step
+    must also include the updated plan file AND the step
+    notes file. Earlier chunk commits MUST NOT touch the
+    plan or notes files.
+10. **Report progress** — one line: which step finished and
+    what's next. Do NOT prompt the user about compaction.
+    Auto-compaction handles context pressure on its own, and
+    step notes guarantee state survives whenever it fires.
 
-   It returns exactly that block. If a dispatched executor
-   returns anything that is NOT this block — a prose status, a
-   bare "Build succeeded.", an empty message — treat the step as
-   **not verified**: do not advance. Check the working tree
-   (`git status`, `git log`) and re-dispatch the executor to
-   finish properly, again ending the prompt with the block above.
+## Per-step notes
 
-2. **If the executor reports `blocked`** — stop. Surface the
-   `blocker:` line to the user and wait. Do not retry blindly or
-   hand the same step to another executor.
+Step notes are a durable handoff to future steps (and to
+future-you after compaction). They are NOT a diff summary —
+`git show` is authoritative for what changed. Capture only
+what is non-obvious from reading the commit.
 
-3. **Final completeness gate (commit messages only).** Code
-   quality was already covered per-commit inside the coordinator;
-   this final pass is NOT a code review. Its only job is to
-   confirm the step's commits, taken together, actually deliver
-   the step's stated goal. **Read ONLY the commit messages** for
-   the step's range — `git log <base>..<head>` subjects and
-   bodies (the `range` from the summary). Do NOT read the diff,
-   the changed files, or any source code. Compare those messages
-   against the step's description and acceptance criteria in
-   `plan.md`:
-   - If every acceptance criterion for the step is accounted for
-     by the commits → the step is complete; proceed.
-   - If one or more criteria are not evidenced by any commit →
-     the step is incomplete. List exactly which criteria/goals
-     are still unmet and hand that list to step 4.
+Path: `.sweatshop/plans/<plan-name>/step-<N>.md`
+(e.g. plan at `.sweatshop/plans/2026-04-15-add-auth/plan.md`
+→ step 1 notes at
+`.sweatshop/plans/2026-04-15-add-auth/step-1.md`).
 
-   This gate never inspects or judges code, and it never amends
-   or rewrites commits — it only decides done-vs-not-done and
-   reports the gaps.
+Format:
 
-4. **If the gate finds gaps** — re-dispatch the `step-executor`
-   in **continue mode**: pass the plan directory, the step
-   number, the step's base SHA, and the gap list verbatim. The
-   coordinator **continues the step** — it implements the missing
-   work as additional code commits (it does NOT amend existing
-   commits to satisfy the gate, and it does NOT write notes yet).
-   Use the new range it returns, then re-run the completeness gate
-   (step 3) over it. Max 3 continue/gate iterations before
-   escalating to the user.
+```markdown
+# Step <N> notes: <step title>
 
-5. **Finalize the step (gate approved).** Only once the gate
-   passes, re-dispatch the `step-executor` in **finalize mode**:
-   pass the plan directory, the step number, and the step's base
-   SHA. It flips this step's acceptance boxes in `plan.md`, writes
-   `step-<N>.md`, and **amends both into the step's final commit**
-   (the last in the series) — never an earlier commit, never a new
-   one. This is the only point where the plan and notes are
-   committed, so they always ride on the approved final commit.
-   Use the new head it returns.
+## Decisions
+- Non-obvious choices made during implementation, with the
+  reasoning. (e.g. "Kept the retry loop synchronous because
+  the downstream client is not thread-safe.")
 
-6. **Report progress** — one line: which step finished and
-   what's next. Do NOT prompt the user about compaction; step
-   notes carry state across it on their own.
+## Constraints surfaced
+- Invariants, edge cases, or gotchas discovered while
+  implementing that later steps must respect.
+
+## For later steps
+- Anything a subsequent step will need to know: new helpers
+  introduced, conventions established, pitfalls to avoid.
+  Leave empty if nothing cross-cuts.
+
+## Review resolutions
+- If review requested changes, record the key points and how
+  they were addressed. Omit the section if review passed
+  clean.
+```
+
+Keep each section tight — bullets, not paragraphs. If a
+section has nothing to record, write "None" rather than
+deleting the heading, so the shape is predictable.
+
+## Chunking commits
+
+A step's diff is broken into multiple commits so a human can
+read the change as a story rather than a wall of unrelated
+edits. Each chunk should be:
+
+- **Coherent** — one idea per commit. "Add the parser",
+  "wire the parser into the request handler", "update
+  callers" are three chunks, not one.
+- **Self-explanatory** — the commit subject describes the
+  chunk on its own terms. A reader who has not seen the
+  plan should understand what changed and why.
+- **Small** — small enough to skim. If a chunk needs a
+  multi-paragraph commit body to explain, it is probably
+  two chunks.
+- **Ordered by dependency** — earlier chunks should not
+  depend on later ones. Prefer "introduce" → "use" →
+  "remove old" sequencing.
+
+Tests-first still applies: the test commit lands before (or
+in the same chunk as) the implementation commit that makes
+it pass. A single "tests + the smallest impl that turns
+them green" chunk is fine when the impl is trivially tied
+to the test; split them when the impl is large enough that
+seeing the failing test commit on its own helps a reviewer.
+
+Verification (build / test / lint) runs once at the end of
+the step over the full chunk series — not per chunk. The
+end-state of the step must be green; individual chunks need
+not be.
+
+If the step genuinely cannot be split (e.g. a single
+one-line config change), commit it as one chunk. Do not
+invent artificial boundaries.
 
 ## Mid-execution replanning
 
-If an executor reports the plan itself is wrong (step too large,
-assumptions invalid, a new blocker that changes scope):
+If during implementation it becomes clear the plan needs
+adjustment (step too large, assumptions wrong, new blocker):
 
-1. Stop dispatching steps.
+1. Stop implementation.
 2. Re-plan the remaining steps.
 3. Invoke `requesting-review` on the revised plan.
 4. Get explicit user approval before continuing.
-5. Commit the updated plan file.
+5. Update and commit the plan file.
 6. Resume from the adjusted plan.
 
 ## Completion
 
-After the last step finishes successfully:
+After every step finishes successfully:
 
-1. Invoke the `verification` skill for a final full-project
-   pass.
-2. Report a completion summary: total steps executed and the
-   overall range of commit SHAs produced.
+1. Invoke the `verification` skill.
+2. Report a completion summary: total steps executed and
+   the range of commit SHAs produced.
 
 ## Rules
 
-CRITICAL: Execute steps strictly in order. One step at a time,
-no skipping, no parallel execution.
+CRITICAL: Execute steps strictly in order. One step at a
+time, no parallel execution, no skipping.
 
-CRITICAL: You orchestrate; you do not implement. Every step's
-code, tests, verification, notes, and commits are produced by
-the `step-executor` coordinator and the `step-implementer`
-subagents it dispatches — never inline in this loop. Inlining
-defeats the entire token-isolation design.
+CRITICAL: Tests come first. No implementation code before
+failing tests exist for it.
 
-CRITICAL: Each step must pass the final completeness gate before
-the next step is dispatched. The gate reads ONLY the commit
-messages for the step's range and checks them against the step's
-acceptance criteria — it never reads code and never amends
-commits. Gaps go back to the coordinator in continue mode.
+CRITICAL: If build, test, or lint fails, fix and re-run. Do
+NOT commit broken code.
 
-CRITICAL: If an executor reports `blocked`, or a step fails the
-completeness gate 3 times, stop and surface to the user. Do not paper over
-failures to keep the pipeline moving.
+CRITICAL: Every step must pass review before moving to the
+next step.
 
-CRITICAL: After auto-compaction or when resuming in a fresh
-session, re-read `plan.md` and check which steps' commits
-already exist before dispatching — never re-run a step that has
-already landed. The executors' `step-*.md` notes and commits are
-the source of truth for progress.
+CRITICAL: If a step fails repeatedly and you cannot resolve
+it, stop and surface to the user. Do not paper over failures
+to keep the pipeline moving.
+
+CRITICAL: Do NOT modify code unrelated to the current step.
+No drive-by refactors, cleanups, or "while I'm here" changes.
+
+CRITICAL: Every step MUST produce a step-notes file and
+include it in the step's FINAL commit (alongside the plan
+file update). Skipping notes breaks the compaction-safety
+contract that later steps rely on. Earlier chunk commits
+within the step MUST NOT modify plan.md or any step-*.md.
+
+CRITICAL: Plans are transparent to code and commits. Do NOT
+reference plan steps, gaps, step numbers, or the plan itself
+in code comments or commit messages. Write commits and
+comments as if the plan does not exist — describe the change
+on its own terms. No "Step 3:", "addresses GAP-2", "as
+planned in step-4.md", etc.
+
+CRITICAL: After auto-compaction (or when starting a fresh
+session mid-plan), read `plan.md` and all prior `step-*.md`
+notes before continuing. Within a single uncompacted session
+do NOT re-read them every step — the conversation already
+has them and re-reading is the dominant token cost.

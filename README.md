@@ -105,45 +105,30 @@ handoff between subagents and survive context compaction.
 
 ```mermaid
 flowchart TD
-    Start(["Next step"]) --> Coord["step-executor (coordinator)<br/>• load plan + prior notes<br/>• plan next chunk (one at a time)"]
-    Coord --> Impl["step-implementer subagent<br/>• tests-first for this chunk<br/>• implement minimum code<br/>• /verification (build+test+lint) green<br/>• commit ONE chunk (code only)"]
-    Impl --> CRev["Reviewer subagent<br/>over that single commit"]
-    CRev -->|changes requested| CFix["step-implementer — fix mode<br/>• amend the commit<br/>• re-verify"]
-    CFix --> CRev
-    CRev -->|approved| More{"More chunks?"}
-    More -->|yes| Coord
-    More -->|no| Sum["Orchestrator reads<br/>STEP summary block (commit range, ≤8 lines)"]
-    Sum --> Gate{"Completeness gate<br/>commit messages vs<br/>acceptance criteria<br/>(NEVER reads code)"}
-    Gate -->|gaps| Cont["step-executor — continue mode<br/>• add missing work as NEW commits<br/>• no notes yet"]
-    Cont --> Sum
-    Gate -->|complete| Final["step-executor — finalize mode<br/>• flip plan boxes + write step-N.md<br/>• amend into the FINAL commit"]
-    Final --> Next{"More steps?"}
+    Start(["Next step"]) --> Impl["Implementation subagent<br/>• research<br/>• failing tests<br/>• implement in chunks<br/>• /verification<br/>• flip plan boxes<br/>• write step-N.md"]
+    Impl --> Read["Orchestrator reads<br/>step-N.md + git diff --stat"]
+    Read --> Risk{"Risk-gated?"}
+    Risk -->|trivial<br/>docs / rename / config| Commit
+    Risk -->|non-trivial| Review["Reviewer subagent<br/>(code-only or code+domain)"]
+    Review -->|approved| Commit["Orchestrator commits chunks<br/>• chunk 1 (code only)<br/>• chunk 2 (code only)<br/>• …<br/>• final chunk<br/>(code + plan + step-N.md)"]
+    Review -->|changes requested| Fix["Fixup subagent<br/>• apply fixes<br/>• re-verify<br/>• update step-N.md"]
+    Fix --> Review
+    Commit --> Next{"More steps?"}
     Next -->|yes| Start
     Next -->|no| Done(["Final verification"])
 
     style Start fill:#4a5568,color:#fff
-    style Coord fill:#2b6cb0,color:#fff
-    style Impl fill:#2c7a7b,color:#fff
-    style CFix fill:#2c7a7b,color:#fff
-    style Cont fill:#2b6cb0,color:#fff
-    style Final fill:#2b6cb0,color:#fff
-    style CRev fill:#6b46c1,color:#fff
-    style Gate fill:#d69e2e,color:#fff
+    style Impl fill:#2b6cb0,color:#fff
+    style Review fill:#6b46c1,color:#fff
+    style Fix fill:#2b6cb0,color:#fff
+    style Risk fill:#d69e2e,color:#fff
+    style Commit fill:#38a169,color:#fff
     style Done fill:#2f855a,color:#fff
 ```
 
-The `step-executor` coordinator (blue) plans the step's commits
-one chunk at a time and dispatches a `step-implementer` (teal)
-for each one; the `reviewer` (purple) reads each committed chunk
-in its own context. All three run in isolated contexts — diffs
-and test output never enter the main thread, which sees only the
-coordinator's compact summary. Code quality is reviewed
-per-commit as the chunks land; the orchestrator's final gate
-(amber) is a **completeness check** that reads only the commit
-messages against the step's acceptance criteria — it never reads
-code. Gaps send the coordinator back in continue mode to add the
-missing commits; once complete, finalize amends the plan boxes
-and `step-<N>.md` into the step's final commit.
+Subagents (blue/purple) run in isolated contexts and report a
+≤3-line summary back to the orchestrator — diffs and test
+output never enter the main thread.
 
 ### 1. Requirements analysis
 
@@ -170,10 +155,8 @@ Work is broken into small, incremental, decoupled steps —
 each landing during execution as a coherent series of small,
 reviewable commits. Every step includes a description,
 rationale, acceptance criteria (as checkboxes), and a list of
-files likely involved. Each plan gets its own directory —
-`.sweatshop/plans/<plan-name>/plan.md`, with per-step notes
-(`step-<N>.md`) landing alongside it during execution — and is
-reviewed, approved, and committed before execution begins.
+files likely involved. Plans are saved to `.sweatshop/plans/`
+and committed before execution begins.
 
 ### 4. Review (plans and code)
 
@@ -193,16 +176,11 @@ exploration pass. The mode is picked per-invocation:
   driven by the `focus_areas` configured during onboarding
   (e.g., crypto/DeFi, frontend, ML, distributed systems).
 
-Code review happens **per commit**: the `step-executor`
-coordinator dispatches the `reviewer` over each chunk as it lands
-and, on changes, sends the `step-implementer` back in fix mode to
-fold the fix into that same commit with `git commit --amend`
-before moving on. There is no separate holistic code review at
-the end — the final gate is a **completeness check**, not a code
-review: it reads only the step's commit messages and confirms
-they deliver every acceptance criterion (see Execution below).
-The per-commit code review uses the modes above; the final
-completeness gate never reads code.
+Trivial steps (pure docs, mechanical renames, config-only
+edits with no runtime effect) skip review entirely. If any
+verdict requests changes, a **fixup subagent** applies the
+fixes and re-runs verification before re-review — up to 3
+iterations before escalating to the user.
 
 ### 5. Execution (orchestrator + subagents, TDD per step)
 
@@ -210,45 +188,33 @@ The `/executing-plans` skill walks the plan one step at a
 time, strictly in plan order. The main thread is an
 **orchestrator** — it never implements directly. Per step:
 
-1. **`step-executor` coordinator** runs the step in its own
-   context but writes no code itself: it loads `plan.md` and the
-   prior step's notes (walking further back only when a note
-   points there), then plans the step's commits **one chunk at a
-   time** (one idea per chunk, 1–5 chunks). For each chunk it
-   dispatches a **`step-implementer` subagent** that writes the
-   chunk's tests first, implements the minimum code, runs
-   `/verification` (build + test + lint) until that single
-   commit is green, and commits exactly that one chunk. The
-   coordinator then dispatches the `reviewer` over that one
-   commit and, on changes, sends the implementer back in fix
-   mode to amend it — so every commit is verified and reviewed in
-   isolation before the next chunk is planned. It commits **only
-   code** at this stage — the plan boxes and step-notes are not
-   written yet.
-2. **Orchestrator reads only the coordinator's STEP summary
-   block** — the commit range and a one-line result. Diffs and
-   test output stay out of the main thread.
-3. **Completeness gate (commit messages only)** — the orchestrator
-   reads ONLY the commit messages for the step's range and checks
-   them against the step's acceptance criteria. It never reads
-   code (code quality was covered per-commit). If every criterion
-   is delivered, the step passes; otherwise it lists the gaps.
-4. **Continue mode** — if the gate finds gaps, the `step-executor`
-   is re-dispatched to **continue the step**, adding the missing
-   work as new commits (never amending existing ones), then the
-   gate re-runs. Max 3 cycles.
-5. **Finalize mode** — once the gate approves, the `step-executor`
-   is dispatched one last time to flip the plan's `- [ ]` boxes,
-   write the step-notes file, and **amend both into the step's
-   final commit** (the last in the series). This is the only point
-   the plan and notes are committed, so they always ride on the
-   approved final commit.
+1. **Implementation subagent** runs the full TDD loop in its
+   own context: optional `/research`, failing tests, minimum
+   implementation split into 2–5 coherent chunks (one idea
+   per chunk), `/verification` (build + test + lint) over the
+   end-state, flips the plan's `- [ ]` boxes, and writes the
+   step-notes file.
+2. **Orchestrator reads only step notes** plus
+   `git diff --stat` — diffs and test output stay out of the
+   main thread.
+3. **Risk-gated review** — the orchestrator skips review for
+   trivial steps; otherwise dispatches the `reviewer` agent
+   (with the mode chosen from `domain.paths`).
+4. **Fixup subagent** applies any blocking review feedback
+   and updates the step-notes "Review resolutions" section.
+   Then re-review. Max 3 cycles.
+5. **Chunked commits** — orchestrator invokes
+   `/commit-changes` once per chunk so each commit reads as
+   a single coherent change a human can skim. Earlier chunks
+   are code-only; the final chunk of the step bundles the
+   updated `plan.md` and the step-notes file alongside its
+   code so the step still lands atomically.
 
 Step notes are the durable handoff: they survive context
 compaction, so a fresh session mid-plan can re-orient just
-by listing `step-*.md` files. If a step is blocked or fails
-the completeness gate repeatedly, execution stops and the issue
-is surfaced — no further steps run until the plan is adjusted
+by listing `step-*.md` files. If a step fails repeatedly and
+cannot be resolved, execution stops and the issue is
+surfaced — no further steps run until the plan is adjusted
 and re-approved.
 
 ### 6. Verification
@@ -264,8 +230,6 @@ uncommitted changes remain.
 |-------|------|
 | `researcher` | Deep-dives into the codebase and external sources to build task context |
 | `reviewer` | Principal-engineer code review plus per-project domain review in a single pass |
-| `step-executor` | Coordinates one plan step: plans commits one chunk at a time, dispatches an implementer per chunk, reviews each commit, writes notes — in an isolated context |
-| `step-implementer` | Implements exactly one commit (one chunk) per dispatch — tests-first, build/test/lint green — and has a fix mode that amends it |
 
 ## Skills
 
@@ -303,24 +267,6 @@ go test, dotnet test, gradle test, mvn test, pytest.
 Supported linters: make lint, cargo clippy, npm run lint,
 golangci-lint, dotnet format, gradle check, mvn checkstyle,
 ruff, flake8, pylint.
-
-## Enforced skill routing
-
-A `PreToolUse` hook (`hooks/hooks.json` →
-`hooks/scripts/enforce-skill-routing.py`) keeps the main agent
-and every subagent on the canonical path: it blocks raw
-`git commit` and bare build/test/lint runner commands and
-redirects them to `/commit-changes`, `/build`, `/test`, and
-`/lint`. The skills' own invocations pass through because the
-hook recognizes their canonical shape — the `mktemp` output
-wrapper for build/test/lint, and `--signoff` for commits —
-while mechanical history edits (`--amend`, `--fixup`,
-`--squash`) stay exempt. The hook fails open: any parse error
-exits cleanly so it can never wedge an agent.
-
-Known limitation: a verbose run (`/build --verbose`, `-v`)
-skips the wrapper, so it is blocked too — re-run without
-`--verbose`.
 
 ## License
 
